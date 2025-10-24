@@ -45,6 +45,10 @@ const config = {
     accessSecret: process.env.ACCESS_TOKEN_SECRET,
     accessExpiration: process.env.ACCESS_TOKEN_EXPIRATION,
     refreshExpiration: process.env.REFRESH_TOKEN_EXPIRATION
+  },
+    google: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET
   }
 };
 
