@@ -100,6 +100,7 @@
 //     }
 // };
   
+// Commit de prueba
   const googleLogin = async (req, res) => {
   const response = new ApiResponse();
   const { idToken } = req.body; // En Postman envías { "idToken": "TOKEN_DE_GOOGLE" }
