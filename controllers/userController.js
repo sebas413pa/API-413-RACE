@@ -6,6 +6,7 @@ const ApiResponse = require('../utils/apiResponse');
 const { createUser } = require('../schemas/userSchema');
 
 const listUsers = async(req,res) => {
+    
     const apiResponse = new ApiResponse();
     try{
     const users = await User.findAll({
@@ -19,7 +20,6 @@ const listUsers = async(req,res) => {
         logger.error("Error al listar los usuarios", error)
         return res.status(500).json(apiResponse.errorResponse("Error al listar los usuarios"));
     }
-
 };
 
 

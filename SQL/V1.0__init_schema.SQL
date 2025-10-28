@@ -316,9 +316,10 @@ CREATE INDEX IX_payments_sale_id ON payments(sale_id);  -- Índice para consulta
 CREATE TABLE tokens (
   token_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
-  token VARCHAR(255) NOT NULL,
+  refresh_token VARCHAR(500) NOT NULL,
   expires_at DATETIME,
   createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE INDEX IX_tokens_user_id ON tokens(user_id);

@@ -6,8 +6,8 @@ const authRoutes = require('./authRoutes');
 const { authenticateJWT } = require('../middlewares/authMiddleware');
 const { checkRole } = require('../middlewares/roleMiddleware');
 
-router.use('/users', authenticateJWT, checkRole(['Administrador']), userRoutes);
 router.use('/auth', authRoutes);
+router.use('/users', authenticateJWT, checkRole(['Administrador']), userRoutes);
 
 router.get('/', (req, res) => {
   res.status(200).json({

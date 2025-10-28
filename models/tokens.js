@@ -15,8 +15,8 @@ module.exports = function(sequelize, DataTypes) {
         key: 'user_id'
       }
     },
-    token: {
-      type: DataTypes.STRING(255),
+    refresh_token: {
+      type: DataTypes.STRING(500),
       allowNull: false
     },
     expires_at: {
