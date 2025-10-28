@@ -15,11 +15,6 @@ module.exports = function(sequelize, DataTypes) {
         key: 'role_id'
       }
     },
-    google_id: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-      unique: "google_id"
-    },
     username: {
       type: DataTypes.STRING(50),
       allowNull: false,
@@ -66,14 +61,6 @@ module.exports = function(sequelize, DataTypes) {
         using: "BTREE",
         fields: [
           { name: "email" },
-        ]
-      },
-      {
-        name: "google_id",
-        unique: true,
-        using: "BTREE",
-        fields: [
-          { name: "google_id" },
         ]
       },
       {
