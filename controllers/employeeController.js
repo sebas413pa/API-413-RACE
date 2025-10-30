@@ -1,0 +1,145 @@
+'use strict';
+const { models } = require('../db');
+const { employees: Employee, users: User, roles: Role } = models;
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const logger = require('../utils/logger');
+const ApiResponse = require('../utils/apiResponse');
+const { listEmployeeSchema,createEmployeeSchema, updateEmployeeSchema, employeeIdParamSchema } = require('../schemas/employeeSchema');
+
+
+const listEmployees = async (req, res) => {
+    const response = new ApiResponse();
+    const { error, value } = listEmployeeSchema.validate(req.query);
+    if (error) {
+        return res.status(400).json(response.errorResponse('Parámetros inválidos', error.details));
+    }
+  const { role_id } = value;
+  try {
+    const employees = await Employee.findAll({
+        where:{ status:true },
+      include: [
+        { model: User, as: 'user', attributes: ['username', 'email', 'status'],
+          include: [{ model: Role, as: 'role', attributes: ['role_id','role_name'] }]
+        },
+      ],
+    });
+    return res.status(200).json(response.successResponse('Empleados obtenidos exitosamente', employees));
+  } catch (error) {
+    logger.error('Error al listar empleados', error);
+    return res.status(500).json(response.errorResponse('Error al listar empleados', error));
+  }
+};
+
+const createEmployee = async (req, res) => {
+  const response = new ApiResponse();
+  const { error, value } = createEmployeeSchema.validate(req.body);
+  if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
+
+  try {
+    const { username, email, role_id, first_name, last_name, hire_date, salary } = value;
+
+    const existingUser = await User.findOne({ where: { username } });
+    if (existingUser) return res.status(400).json(response.errorResponse('El nombre de usuario ya existe'));
+
+    const role = await Role.findByPk(role_id);
+    if (!role) return res.status(404).json(response.errorResponse('Rol no encontrado'));
+
+    const tempPassword = crypto.randomBytes(6).toString('base64').slice(0, 8);
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
+
+    const newUser = await User.create({
+      role_id,
+      username,
+      email,
+      password: hashedPassword,
+      status: true,
+    });
+
+    const newEmployee = await Employee.create({
+      user_id: newUser.user_id,
+      first_name,
+      last_name,
+      hire_date,
+      salary,
+    });
+
+    return res.status(201).json(
+      response.successResponse(
+        { employee: newEmployee, tempPassword },
+        'Empleado y usuario creados exitosamente'
+      )
+    );
+  } catch (error) {
+    logger.error('Error al crear empleado', error);
+    return res.status(500).json(response.errorResponse('Error al crear empleado', error));
+  }
+};
+
+const updateEmployee = async (req, res) => {
+  const response = new ApiResponse();
+  const { employee_id } = req.params;
+
+  const paramResult = employeeIdParamSchema.validate(employee_id);
+  if (paramResult.error)
+    return res.status(400).json(response.errorResponse('ID de empleado inválido', paramResult.error.details));
+
+  const { error, value } = updateEmployeeSchema.validate(req.body);
+  if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
+
+  try {
+    const employee = await Employee.findByPk(employee_id);
+    if (!employee) return res.status(404).json(response.errorResponse('Empleado no encontrado'));
+
+    const updated = await employee.update(value);
+    return res.status(200).json(response.successResponse(updated, 'Empleado actualizado exitosamente'));
+  } catch (error) {
+    logger.error('Error al actualizar empleado', error);
+    return res.status(500).json(response.errorResponse('Error al actualizar empleado', error));
+  }
+};
+
+const deactivateEmployee = async (req, res) => {
+  const response = new ApiResponse();
+  const { employee_id } = req.params;
+
+  try {
+    const employee = await Employee.findByPk(employee_id, { include: [{ model: User, as: 'user' }] });
+    if (!employee) return res.status(404).json(response.errorResponse('Empleado no encontrado'));
+
+    employee.status = false;
+    if (employee.user) employee.user.status = false;
+
+    await employee.save();
+    if (employee.user) await employee.user.save();
+
+    return res.status(200).json(response.successResponse(null, 'Empleado desactivado exitosamente'));
+  } catch (error) {
+    logger.error('Error al desactivar empleado', error);
+    return res.status(500).json(response.errorResponse('Error al desactivar empleado', error));
+  }
+};
+
+const activateEmployee = async (req, res) => {
+  const response = new ApiResponse();
+  const { employee_id } = req.params;
+
+  try {
+    const employee = await Employee.findByPk(employee_id, { include: [{ model: User, as: 'user' }] });
+    if (!employee) return res.status(404).json(response.errorResponse('Empleado no encontrado'));
+
+    employee.status = true;
+    if (employee.user) employee.user.status = true;
+
+    await employee.save();
+    if (employee.user) await employee.user.save();
+
+    return res.status(200).json(response.successResponse(null, 'Empleado desactivado exitosamente'));
+  } catch (error) {
+    logger.error('Error al desactivar empleado', error);
+    return res.status(500).json(response.errorResponse('Error al desactivar empleado', error));
+  }
+};
+
+
+module.exports = { listEmployees, createEmployee, updateEmployee, deactivateEmployee, activateEmployee };

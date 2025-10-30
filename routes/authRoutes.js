@@ -6,10 +6,9 @@ const authController = require('../controllers/authController');
 
 const router = express.Router();
 
-// router.post('/login', authController.login);
+router.post('/login', authController.login);
 router.post('/refresh', authenticateRefresh, authController.refresh);
 router.post('/logout', authenticateLogout, authController.logout);
-router.post('/login/google', authController.googleLogin);
 router.get('/me', authenticateJWT, authController.getMe);
 
 module.exports = router;
