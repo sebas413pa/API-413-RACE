@@ -106,7 +106,7 @@ const createCar = async (req, res) => {
           logger.debug('createCar - car_image created', { car_image_id: row.car_image_id, car_id: row.car_id, image_url: row.image_url });
         } catch (e) {
           logger.error('createCar - error creating CarImage', e);
-          throw e; // bubble to rollback
+          throw e; 
         }
       }
     }
