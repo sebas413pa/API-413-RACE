@@ -13,10 +13,11 @@
 
   const login = async (req, res) => {
     const response = new ApiResponse();
-    const { error } = loginUser.validate(req.body);
-    if (error) return res.status(400).json(response.errorResponse("Validación fallida", error.details));
+    const { error, value } = loginUser.validate(req.body);
+    if (error)
+      return res.status(400).json(response.errorResponse("Validación fallida", error.details));
 
-    const { username, password } = req.body;
+    const { username, password } = value;
     logger.info(`Intento de login: ${username}`);
 
     try {
@@ -98,7 +99,6 @@
       return res.status(500).json(response.errorResponse("Error al hacer login", error));
     }
 };
-
 
 
   const refresh = async (req, res) => {
