@@ -18,6 +18,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+router.get('/catalog', controller.listCatalogCars);
 router.get('/', authenticateJWT, checkRole(['Administrador','Empleado']), controller.listCars);
 router.post(
 	'/',
