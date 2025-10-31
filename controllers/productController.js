@@ -3,7 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
 const { models } = require('../db');
-const { products: Product, brand_products: BrandProduct, category_products: CategoryProduct } = models;
+const {
+  products: Product,
+  brand_products: BrandProduct,
+  category_products: CategoryProduct,
+  promotion_products: PromotionProduct,
+  promotions: Promotion,
+} = models;
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const {
@@ -68,6 +74,51 @@ const removeFileQuietly = (absolutePath) => {
   } catch (err) {
     logger.warn('No se pudo eliminar archivo', { absolutePath, err });
   }
+};
+const toPriceNumber = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+const computePromotionPrice = (basePrice, promotion) => {
+  if (basePrice === null || basePrice === undefined) return null;
+  if (typeof basePrice !== 'number' || Number.isNaN(basePrice)) return null;
+  if (!promotion) return null;
+  const discountValue = toPriceNumber(promotion.discount_value);
+  if (discountValue === null) return null;
+
+  let finalPrice = basePrice;
+  if (promotion.discount_type === 'percentage') {
+    finalPrice = basePrice * (1 - discountValue / 100);
+  } else if (promotion.discount_type === 'fixed_amount') {
+    finalPrice = basePrice - discountValue;
+  }
+
+  if (!Number.isFinite(finalPrice)) return null;
+  if (finalPrice < 0) finalPrice = 0;
+  return Number(finalPrice.toFixed(2));
+};
+const selectBestPromotion = (basePrice, promotionProducts) => {
+  if (basePrice === null || basePrice === undefined) return null;
+  if (!Array.isArray(promotionProducts) || !promotionProducts.length) return null;
+  let bestData = null;
+  let bestPrice = basePrice;
+
+  for (const relation of promotionProducts) {
+    if (!relation || !relation.promotion) continue;
+    const promotion = relation.promotion;
+    const promoPrice = computePromotionPrice(basePrice, promotion);
+    if (promoPrice === null) continue;
+    if (bestData === null || promoPrice < bestPrice) {
+      bestPrice = promoPrice;
+      bestData = {
+        promotion,
+        price: promoPrice,
+      };
+    }
+  }
+
+  return bestData;
 };
 
 const listProducts = async (req, res) => {
@@ -164,6 +215,91 @@ const createProduct = async (req, res) => {
     logger.error('Error al crear producto', err);
     cleanupUploads();
     return res.status(500).json(response.errorResponse('Error al crear producto', err));
+  }
+};
+
+const listCatalogProducts = async (req, res) => {
+  const response = new ApiResponse();
+  try {
+    const now = new Date();
+    const items = await Product.findAll({
+      where: {
+        status: true,
+        stock: { [Op.gt]: 0 },
+      },
+      attributes: ['product_id', 'name', 'description', 'image_url', 'stock', 'sale_price', 'purchase_price'],
+      include: [
+        { model: BrandProduct, as: 'brand_product', attributes: ['brand_product_id', 'brand_name'] },
+        { model: CategoryProduct, as: 'category_product', attributes: ['category_product_id', 'category_name'] },
+        {
+          model: PromotionProduct,
+          as: 'promotion_products',
+          required: false,
+          attributes: ['promotion_product_id'],
+          include: [
+            {
+              model: Promotion,
+              as: 'promotion',
+              required: true,
+              attributes: ['promotion_id', 'promotion_name', 'discount_type', 'discount_value', 'start_date', 'end_date', 'status'],
+              where: {
+                status: true,
+                start_date: { [Op.lte]: now },
+                end_date: { [Op.or]: [{ [Op.gte]: now }, { [Op.eq]: null }] },
+              },
+            },
+          ],
+        },
+      ],
+      order: [['product_id', 'ASC']],
+    });
+
+    const mapped = items.map((product) => {
+      const obj = product.toJSON();
+      const regularPriceCandidate = toPriceNumber(obj.sale_price) ?? toPriceNumber(obj.purchase_price);
+      const regularPrice = regularPriceCandidate !== null ? Number(regularPriceCandidate.toFixed(2)) : null;
+      const promotionData = regularPrice !== null ? selectBestPromotion(regularPrice, obj.promotion_products) : null;
+
+      const result = {
+        product_id: obj.product_id,
+        name: obj.name,
+        description: obj.description,
+        image_url: ensureAbsoluteUrl(obj.image_url),
+        stock: obj.stock,
+        regular_price: regularPrice,
+        promotion_price: promotionData ? promotionData.price : null,
+        promotion: promotionData
+          ? {
+              promotion_id: promotionData.promotion.promotion_id,
+              promotion_name: promotionData.promotion.promotion_name,
+              discount_type: promotionData.promotion.discount_type,
+              discount_value: toPriceNumber(promotionData.promotion.discount_value),
+              start_date: promotionData.promotion.start_date,
+              end_date: promotionData.promotion.end_date,
+            }
+          : null,
+      };
+
+      if (obj.brand_product) {
+        result.brand = {
+          brand_product_id: obj.brand_product.brand_product_id,
+          brand_name: obj.brand_product.brand_name,
+        };
+      }
+      if (obj.category_product) {
+        result.category = {
+          category_product_id: obj.category_product.category_product_id,
+          category_name: obj.category_product.category_name,
+        };
+      }
+
+      return result;
+    });
+
+    return res.status(200).json(response.successResponse(mapped, 'Catálogo de productos obtenido exitosamente'));
+  } catch (err) {
+    logger.error('Error al obtener catálogo de productos', err);
+    return res.status(500).json(response.errorResponse('Error al obtener catálogo de productos', err));
   }
 };
 
@@ -286,6 +422,7 @@ const activateProduct = async (req, res) => {
 
 module.exports = {
   listProducts,
+  listCatalogProducts,
   createProduct,
   updateProduct,
   deactivateProduct,
