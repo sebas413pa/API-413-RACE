@@ -14,6 +14,7 @@ const carLineRoutes = require('./carLineRoutes');
 const carRoutes = require('./carRoutes');
 const categoryProductRoutes = require('./categoryProductRoutes');
 const productRoutes = require('./productRoutes');
+const promotionRoutes = require('./promotionRoutes');
 const { authenticateJWT } = require('../middlewares/authMiddleware');
 const { checkRole } = require('../middlewares/roleMiddleware');
 
@@ -30,6 +31,7 @@ router.use('/car-lines', authenticateJWT, checkRole(['Administrador','Empleado']
 router.use('/cars', authenticateJWT, checkRole(['Administrador','Empleado']), carRoutes);
 router.use('/category-products', authenticateJWT, checkRole(['Administrador','Empleado']), categoryProductRoutes);
 router.use('/products', authenticateJWT, checkRole(['Administrador','Empleado']), productRoutes);
+router.use('/promotions', authenticateJWT, checkRole(['Administrador','Empleado']), promotionRoutes);
 
 router.get('/', (req, res) => {
   res.status(200).json({
