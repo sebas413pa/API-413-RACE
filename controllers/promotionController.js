@@ -13,20 +13,6 @@ const {
   promotionProductIdParamSchema,
 } = require('../schemas/promotionSchema');
 
-const normalizeBoolean = (value) => {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value === 1;
-  const lowered = String(value).toLowerCase();
-  return lowered === 'true' || lowered === '1' || lowered === 'yes' || lowered === 'on';
-};
-
-const normalizeNumber = (value) => {
-  if (value === undefined || value === null || value === '') return undefined;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? undefined : parsed;
-};
-
 const listPromotions = async (req, res) => {
   const response = new ApiResponse();
   const queryPayload = {

@@ -22,6 +22,11 @@ module.exports = function(sequelize, DataTypes) {
     expires_at: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    status: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: 1
     }
   }, {
     sequelize,

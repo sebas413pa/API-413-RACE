@@ -53,6 +53,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: 0
     },
+    status: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: 1
+    },
     received_at: {
       type: DataTypes.DATEONLY,
       allowNull: true

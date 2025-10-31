@@ -192,6 +192,7 @@ const cancelEntry = async (req, res) => {
             return res.status(200).json(response.errorResponse("No existe la entrada"))
         }
 
+        await entry.update({status:0}, {transaction})
         const details = await PurchaseDetail.findAll({
             where:{
                 purchase_id: entry.purchase_id
@@ -225,7 +226,8 @@ const cancelEntry = async (req, res) => {
 
         for(const batch of batches){
             await batch.update({
-                available_qty: 0
+                available_qty: 0,
+                status:0
             }, {transaction})
         }
         const entry_details = await PurchaseDetail.findAll({
@@ -235,6 +237,7 @@ const cancelEntry = async (req, res) => {
             transaction,
         });
             for(const detail of entry_details){
+                await detail.update({state: 0}, {transaction})
                 if(detail.product_id)
                 {
                     const productExists = await Product.findByPk(detail.product_id, {transaction});
@@ -289,7 +292,6 @@ const cancelEntry = async (req, res) => {
 
         await transaction.commit();
         logger.info("Se ha anulado la entrada")
-        await registerLog(req, 'ANULACIÓN DE ENTRADA', `ANULACIÓN DE ENTRADA CON DÓCUMENTO DE REFERENCIA: "${entry.reference_document}"`);
         res.status(200).json(response.successResponse(null, "Se ha anulado la entrada"));
     }catch(error)
     {

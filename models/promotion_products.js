@@ -30,6 +30,11 @@ module.exports = function(sequelize, DataTypes) {
         model: 'cars',
         key: 'car_id'
       }
+    },
+    status: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: 1
     }
   }, {
     sequelize,
