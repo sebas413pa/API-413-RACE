@@ -7,6 +7,10 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       primaryKey: true
     },
+    car_name: {
+      type: DataTypes.STRING(150),
+      allowNull: false
+    },
     line_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -36,7 +40,11 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER,
       allowNull: false
     },
-    price: {
+    purchase_price: {
+      type: DataTypes.DECIMAL(10,2),
+      allowNull: false
+    },
+    sale_price: {
       type: DataTypes.DECIMAL(10,2),
       allowNull: false
     },
