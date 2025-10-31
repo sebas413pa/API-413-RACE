@@ -5,7 +5,60 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
-const { listEmployeeSchema,createEmployeeSchema, updateEmployeeSchema, employeeIdParamSchema } = require('../schemas/employeeSchema');
+const { listEmployeeSchema,createEmployeeSchema, updateEmployeeSchema, employeeIdParamSchema, usernameParamSchema, changeOwnPasswordSchema } = require('../schemas/employeeSchema');
+
+const changePassword = async (req, res) => {
+  const response = new ApiResponse();
+  const userId = req.user?.user_id; 
+  if (!userId) return res.status(401).json(response.errorResponse("No autorizado"));
+
+  const { error, value } = changeOwnPasswordSchema.validate(req.body);
+  if (error) return res.status(400).json(response.errorResponse("Datos de body inválidos", error.details));
+
+  const { newPassword } = value;
+
+  try {
+    const user = await User.findByPk(userId); 
+    if (!user) return res.status(404).json(response.errorResponse("Usuario no encontrado"));
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await user.update({ password: hashedPassword, mustChangePassword: false });
+
+     res.clearCookie('tempToken', { path: '/' });
+    return res.status(200).json(response.successResponse(null,"Password actualizada correctamente"));
+  } catch (error) {
+    logger.error("Error al cambiar Password", error);
+    return res.status(500).json(response.errorResponse("Error al cambiar Password", error));
+  }
+};
+
+const resetPassword = async (req,res) => {
+    const response = new ApiResponse();
+    const { error, value } = usernameParamSchema.validate(req.params.username);
+    if (error) return res.status(400).json(response.errorResponse("Usuario inválido", error.details));
+    const username = value;
+    
+    try{
+        const userExists = await User.findOne({
+            where:{ username }
+        });
+        if (!userExists) {
+        logger.warn(`Usuario no encontrado: ${username}`);
+        return res.status(404).json(response.errorResponse("Usuario no encontrado"));
+        }
+        const tempPassword = crypto.randomBytes(6).toString('hex');
+        const hashedPassword = await bcrypt.hash(tempPassword,12);
+
+        await userExists.update({
+            password: hashedPassword,
+            mustChangePassword: true
+        });
+          return res.status(200).json(response.successResponse(tempPassword,`Contraseña temporal asignada`));
+    }catch(error){
+        logger.error("Error al actualizar la password", error);
+        return res.status(500).json(response.errorResponse("Error al actualizar la password", error));
+    }
+};
 
 
 const listEmployees = async (req, res) => {
@@ -142,4 +195,4 @@ const activateEmployee = async (req, res) => {
 };
 
 
-module.exports = { listEmployees, createEmployee, updateEmployee, deactivateEmployee, activateEmployee };
+module.exports = { listEmployees, createEmployee, updateEmployee, deactivateEmployee, activateEmployee, resetPassword, changePassword };
