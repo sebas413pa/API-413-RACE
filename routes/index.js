@@ -31,7 +31,7 @@ router.use('/car-images', authenticateJWT, checkRole(['Administrador','Empleado'
 router.use('/car-lines', authenticateJWT, checkRole(['Administrador','Empleado']), carLineRoutes);
 router.use('/cars', authenticateJWT, checkRole(['Administrador','Empleado']), carRoutes);
 router.use('/category-products', authenticateJWT, checkRole(['Administrador','Empleado']), categoryProductRoutes);
-router.use('/products', authenticateJWT, checkRole(['Administrador','Empleado']), productRoutes);
+router.use('/products', productRoutes);
 router.use('/promotions', authenticateJWT, checkRole(['Administrador','Empleado']), promotionRoutes);
 router.use('/purchases', authenticateJWT, checkRole(['Administrador','Empleado']), purchaseRoutes)
 router.get('/', (req, res) => {

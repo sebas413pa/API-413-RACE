@@ -24,6 +24,7 @@ const productUpload = upload.fields([
 ]);
 
 router.get('/', authenticateJWT, checkRole(['Administrador','Empleado']), controller.listProducts);
+router.get('/catalog', controller.listCatalogProducts);
 router.post('/', authenticateJWT, checkRole(['Administrador','Empleado']), productUpload, controller.createProduct);
 router.put('/:product_id', authenticateJWT, checkRole(['Administrador','Empleado']), productUpload, controller.updateProduct);
 router.patch('/activate/:product_id', authenticateJWT, checkRole(['Administrador','Empleado']), controller.activateProduct);
