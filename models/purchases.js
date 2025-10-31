@@ -27,6 +27,11 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.DECIMAL(10,2),
       allowNull: true
     },
+    status: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: 1
+    },
     purchase_date: {
       type: DataTypes.DATE,
       allowNull: true,
@@ -35,7 +40,7 @@ module.exports = function(sequelize, DataTypes) {
   }, {
     sequelize,
     tableName: 'purchases',
-    timestamps: false,
+    timestamps: true,
     indexes: [
       {
         name: "PRIMARY",
