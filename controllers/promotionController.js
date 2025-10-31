@@ -13,7 +13,6 @@ const {
   promotionProductIdParamSchema,
 } = require('../schemas/promotionSchema');
 
-
 const listPromotions = async (req, res) => {
   const response = new ApiResponse();
   const queryPayload = {
