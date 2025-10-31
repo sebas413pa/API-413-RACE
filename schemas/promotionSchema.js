@@ -15,7 +15,7 @@ const createPromotionSchema = Joi.object({
   discount_type: Joi.string().valid('percentage', 'fixed_amount').optional(),
   discount_value: Joi.number().precision(2).positive().required(),
   start_date: Joi.date().iso().required(),
-  end_date: Joi.date().iso().min(Joi.ref('start_date')).required(),
+  end_date: Joi.date().iso().min(Joi.ref('start_date')).optional(),
   status: Joi.boolean().optional(),
 });
 

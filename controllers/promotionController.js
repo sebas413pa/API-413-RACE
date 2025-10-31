@@ -50,7 +50,7 @@ const listPromotions = async (req, res) => {
           as: 'promotion_products',
           include: [
             { model: Product, as: 'product', attributes: ['product_id', 'name', 'sale_price', 'status'] },
-            { model: Car, as: 'car', attributes: ['car_id', 'car_name', 'price', 'status'] },
+            { model: Car, as: 'car', attributes: ['car_id', 'car_name', 'sale_price', 'status'] },
           ],
         },
       ],
@@ -174,7 +174,7 @@ const assignPromotionTarget = async (req, res) => {
   if (paramResult.error) return res.status(400).json(response.errorResponse('ID inválido', paramResult.error.details));
   const promotionId = Number(promotion_id);
 
-  const { error, value } = assignPromotionTargetSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  const { error, value } = assignPromotionTargetSchema.validate(req.body);
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
 
   try {
@@ -210,7 +210,7 @@ const assignPromotionTarget = async (req, res) => {
     const result = await PromotionProduct.findByPk(created.promotion_product_id, {
       include: [
         { model: Product, as: 'product', attributes: ['product_id', 'name', 'sale_price', 'status'] },
-        { model: Car, as: 'car', attributes: ['car_id', 'car_name', 'price', 'status'] },
+        { model: Car, as: 'car', attributes: ['car_id', 'car_name', 'sale_price', 'status'] },
       ],
     });
 
