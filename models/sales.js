@@ -26,7 +26,7 @@ module.exports = function(sequelize, DataTypes) {
     sale_date: {
       type: DataTypes.DATE,
       allowNull: true,
-      defaultValue: Sequelize.Sequelize.fn('current_timestamp')
+      defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP')
     },
     total: {
       type: DataTypes.DECIMAL(10,2),

@@ -2,18 +2,14 @@
 
 const {models} = require('../db');
 const {sequelize} = require('../db')
-const {purchases: Purchase, purchase_details: PurchaseDetail} = models;
+const {purchases: Purchase, purchase_details: PurchaseDetail, employees: Employee, cars: Car, products: Product, batches:Batch} = models;
 const ApiResponse = require('../utils/apiResponse');
 const {purchaseBaseSchema, purchaseDetailBaseSchema, listPurchaseSchema} = require('../schemas/purchaseSchema');
 const logger = require('../utils/logger');
-const {increaseStock, decreaseStock} = require('../services/stockService');
 const {createBatch} = require('../services/batchService');
-const {createMovement} = require('../services/movementService');
 const { Op } = require('sequelize');
-const {getBranchFilter, getBranchForCreate} = require('../utils/branchFilter');
-const {updatePrice} = require('../services/supplyService');
-const { registerLog } = require('../services/logService');
-
+const {updateCarPrice} = require('../services/carService')
+const {updateProductPrice} = require('../services/productService')
 const listEntries = async (req, res) => {
     
     const user = req.user
@@ -49,13 +45,13 @@ const listEntries = async (req, res) => {
             where,
             include: [
                 {
-                    model: models.entry_details,
-                    as: 'entry_details',
+                    model: models.purchase_details,
+                    as: 'purchase_details',
                     include: [
                         {
-                            model: models.supplies,
-                            as: 'supply',
-                            attributes: ['supply_id', 'supply_name']
+                            model: models.cars,
+                            as: 'car',
+                            attributes: ['car_id', 'car_name']
                         }
                     ]
                 }
@@ -75,16 +71,7 @@ const createEntry = async (req, res) => {
     
     const user = req.user
     const response = new ApiResponse();
-    let error, value
-    if(user.branch_id == 1)
-    {
-        ({ error, value } = entryCentralSchema.validate(req.body));
-    }
-    else
-    {
-        ({error, value} = entryDistrictSchema.validate(req.body));
-    }
-
+    const { error, value } = purchaseBaseSchema.validate(req.body)
 
     if (error) {
         logger.error("Datos inválidos", error);
@@ -94,106 +81,91 @@ const createEntry = async (req, res) => {
     const transaction = await sequelize.transaction();
 
     try {
-                
-        const branch_id = getBranchForCreate(user, value.branch_id);
-        const entryExist = await Entry.findOne({
+        const employee = await Employee.findOne({
             where: {
-                reference_document: value.reference_document,
-                status: 1
+                user_id: user.user_id
             }, transaction
         })
-        console.log(entryExist)
-        if(entryExist)
+        if(!employee)
         {
-            logger.warn("Entrada repetida")
-            return res.status(400).json(response.errorResponse("Ya existe una entrada con este número de documento"))
+            logger.warn("No se encuentra al empleado")
+            await transaction.rollback()
+            return res.status(404).json(response.errorResponse("No se encontro al empleado"))
         }
-        const createdEntry = await Entry.create({
-            entry_date: value.entry_date,
-            reference_document: value.reference_document,
-            branch_id: branch_id
+        console.log(employee)
+        const createdEntry = await Purchase.create({
+            purchase_date: value.purchase_date,
+            supplier_id: value.supplier_id,
+            employee_id: employee.employee_id
         }, { transaction });
 
         let total = 0;
         for (const detail of value.details) {
-            if(branch_id == 1)
-            {
-                const subtotal = detail.entry_price * detail.unit_quantity;
-                total += subtotal;
-            }
-
-            const createdDetail = await Detail.create({
+            const subtotal = detail.unit_price * detail.quantity;
+            total += subtotal;
+            const createdDetail = await PurchaseDetail.create({
                 ...detail,
-                entry_id: createdEntry.entry_id
+                subtotal: subtotal,
+                purchase_id: createdEntry.purchase_id
             }, { transaction });
 
-            await increaseStock(detail.supply_id, branch_id, detail.unit_quantity, transaction);
-
-            const stock = await Stock.findOne({
-                where: {
-                    supply_id: detail.supply_id,
-                    branch_id: branch_id
-                },
-                transaction
-            });
+            if(detail.car_id)
+            {
+                const carExists = await Car.findByPk(detail.car_id)
+                const newStock = carExists.stock + detail.quantity
+                await carExists.update({
+                    stock:newStock
+                }, {transaction})
+                await updateCarPrice(carExists.car_id, detail.unit_price, transaction)
+            }
+            if(detail.product_id)
+            {
+                const productExists = await Product.findByPk(detail.product_id)
+                const newStock = productExists.stock + detail.quantity
+                await productExists.update({
+                    stock:newStock
+                }, {transaction})
+                
+            }
 
             const batchObject = {
-                batch_code: detail.batch_code,
-                quantity: detail.unit_quantity,
-                expiration_date: detail.expiration_date,
-                stock_id: stock.stock_id,
-                entry_id: createdEntry.entry_id
+                product_id: detail.product_id ?? null,
+                car_id: detail.car_id ?? null,
+                supplier_id: value.supplier_id,
+                purchase_id: createdEntry.purchase_id,
+                batch_code: detail.batch_code
+                    || `PUR-${createdEntry.purchase_id}-${detail.car_id ?? detail.product_id}-${createdDetail.purchase_detail_id}`,
+                quantity: detail.quantity
             };
 
-            const createdBatch = await createBatch(batchObject, transaction);
-
-            const movementObject = {
-                movement_direction: 'Entrada',
-                quantity: detail.unit_quantity,
-                movement_date: value.entry_date,
-                unit_price: detail.entry_price || null,
-                movement_type_id: 1,
-                entry_detail_id: createdDetail.entry_detail_id,
-                supply_id: detail.supply_id,
-                branch_id: branch_id,
-                batch_id: createdBatch.batch_id
-            }
-            if(branch_id == 1)
-            {
-                await updatePrice(detail.supply_id, detail.entry_price, transaction)
-
-            }
-            await createMovement(movementObject, transaction)
+            await createBatch(batchObject, transaction);
         }
 
         await createdEntry.update({ total }, { transaction });
 
-
-
         await transaction.commit();
 
-        const entry = await Entry.findOne({
-            where: { entry_id: createdEntry.entry_id },
+        const entry = await Purchase.findOne({
+            where: { purchase_id: createdEntry.purchase_id },
             include: [
                 {
-                    model: models.branches,
-                    as: 'branch',
-                    attributes: ['branch_id', 'branch_name', 'branch_type_id']
-                },
-                {
-                    model: models.entry_details,
-                    as: 'entry_details',
+                    model: models.purchase_details,
+                    as: 'purchase_details',
                     include: [
                         {
-                            model: models.supplies,
-                            as: 'supply',
-                            attributes: ['supply_id', 'supply_name']
+                            model: models.products,
+                            as: 'product',
+                            attributes: ['product_id', 'name']
+                        },
+                        {
+                            model: models.cars,
+                            as: 'car',
+                            attributes: ['car_id', 'car_name']
                         }
                     ]
                 }
             ]
         });
-        await registerLog(req, 'CREACIÓN DE ENTRADA', `CREACIÓN DE ENTRADA CON DÓCUMENTO DE REFERENCIA: "${createdEntry.reference_document}"`);
         logger.info("Se agregó la entrada", entry);
         res.status(201).json(response.successResponse(entry, "Se agregó la entrada"));
     } catch (error) {
@@ -204,87 +176,115 @@ const createEntry = async (req, res) => {
 };
 
 const cancelEntry = async (req, res) => {
-    const entryId = req.params.entry_id;
+    const purchaseId = req.params.purchase_id;
     const transaction = await sequelize.transaction();
     const response = new ApiResponse();
     
     try
     {
-        const entry = await Entry.findOne({
+        const entry = await Purchase.findOne({
             where:{
-                entry_id: entryId,
-                status: 1
+                purchase_id: purchaseId,
             }, transaction});
         if(!entry)
         {
-            logger.warn("No existe la entrada");
+            logger.warn("No existe la compra");
             return res.status(200).json(response.errorResponse("No existe la entrada"))
         }
 
-        await entry.update({
-            status: 0
-        }, {transaction})
-        const details = await Detail.findAll({
+        const details = await PurchaseDetail.findAll({
             where:{
-                entry_id: entry.entry_id
+                purchase_id: entry.purchase_id
             }, transaction   
         })
         for(const detail of details)
         {
-            await decreaseStock(detail.supply_id, entry.branch_id, detail.unit_quantity     , transaction);
-
-            console.log('id detalle', detail.entry_detail_id)
-            const movement = await Movement.findOne({
-                where: {
-                    entry_detail_id: detail.entry_detail_id
-                }, transaction
-            })
-            await movement.update({
-                    status:0
-                }, {transaction});
+             if(detail.car_id)
+            {
+                const carExists = await Car.findByPk(detail.car_id)
+                const newStock = carExists.stock - detail.quantity
+                await carExists.update({
+                    stock:newStock
+                }, {transaction})
+            }
+            if(detail.product_id)
+            {
+                const productExists = await Product.findByPk(detail.product_id)
+                const newStock = productExists.stock - detail.quantity
+                await productExists.update({
+                    stock:newStock
+                }, {transaction})
+            }
         }
 
         const batches = await Batch.findAll({
             where:{
-                entry_id: entry.entry_id
+                purchase_id: entry.purchase_id
             }, transaction
         })
 
         for(const batch of batches){
             await batch.update({
-                status: 0
+                available_qty: 0
             }, {transaction})
         }
-        const entry_details = await Detail.findAll({
+        const entry_details = await PurchaseDetail.findAll({
             where: {
-                entry_id: entry.entry_id
+                purchase_id: entry.purchase_id
             },
             transaction,
         });
             for(const detail of entry_details){
-                const supplyExists = await Supply.findByPk(detail.supply_id, {transaction});
-                const past_detail = await Detail.findOne({
-                    where:{
-                        supply_id: detail.supply_id
-                    },
-                    order: [['createdAt', 'DESC']],
-                    offset: 1,
-                    transaction,
-                    status: 1
-                });
+                if(detail.product_id)
+                {
+                    const productExists = await Product.findByPk(detail.product_id, {transaction});
+                    const past_detail = await PurchaseDetail.findOne({
+                        where:{
+                            product_id: detail.product_id
+                        },
+                        order: [['createdAt', 'DESC']],
+                        offset: 1,
+                        transaction
+                    });
 
-                if (past_detail) {
-                await supplyExists.update(
-                    { unit_price: past_detail.entry_price },
-                    { transaction }
-                );
-                } else {
-                    await detail.update(
-                    { unit_price: 0 },
-                    { transaction }
-                );
+                    if (past_detail) {
+                        await updateProductPrice(productExists.product_id, past_detail.unit_price, transaction)
+                    } else {
+                        await productExists.update(
+                        { purchase_price: 0,
+                          sale_price: 0
+                        },
+                        { transaction }
+                    );
 
+                    }
                 }
+
+                if(detail.car_id)
+                {
+                    const carExists = await Car.findByPk(detail.car_id, {transaction});
+                    const past_detail = await PurchaseDetail.findOne({
+                        where:{
+                            car_id: detail.car_id
+                        },
+                        order: [['createdAt', 'DESC']],
+                        offset: 1,
+                        transaction
+                    });
+
+                    if (past_detail) {
+                        await updateCarPrice(carExists.car_id, past_detail.unit_price, transaction)
+                    } else {
+                        await carExists.update(
+                        { purchase_price: 0,
+                          sale_price: 0
+                        },
+                        { transaction }
+                    );
+
+                    }
+                }
+                
         }
 
         await transaction.commit();

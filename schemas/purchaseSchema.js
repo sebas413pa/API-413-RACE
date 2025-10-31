@@ -1,11 +1,5 @@
 const Joi = require('joi')
 
-const purchaseBaseSchema = new Joi.object({
-    supplier_id: Joi.number().integer().required(),
-    purchase_date: Joi.date().required(),
-    details: Joi.array().items(entryDetailBaseSchema)
-})
-
 const purchaseDetailBaseSchema = Joi.object({
     product_id: Joi.number().integer(),
     car_id: Joi.number().integer(),
@@ -13,6 +7,12 @@ const purchaseDetailBaseSchema = Joi.object({
     unit_price: Joi.number().precision(2).required(),
     
 }).xor('product_id', 'car_id');
+
+const purchaseBaseSchema = new Joi.object({
+    supplier_id: Joi.number().integer().required(),
+    purchase_date: Joi.date().required(),
+    details: Joi.array().items(purchaseDetailBaseSchema)
+})
 
 const listPurchaseSchema = Joi.object({
     purchase_id: Joi.number().integer(),
@@ -29,4 +29,4 @@ const listPurchaseSchema = Joi.object({
     end_date: Joi.date()
 })
 
-module.exports(purchaseBaseSchema, purchaseDetailBaseSchema, listPurchaseSchema)
+module.exports = {purchaseBaseSchema, purchaseDetailBaseSchema, listPurchaseSchema}

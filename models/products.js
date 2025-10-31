@@ -24,13 +24,13 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       defaultValue: 0
     },
-    price: {
+    purchase_price: {
       type: DataTypes.DECIMAL(10,2),
       allowNull: false
     },
-    purchase_price: {
+    sale_price: {
       type: DataTypes.DECIMAL(10,2),
-      allowNull: true
+      allowNull: false
     },
     category_product_id: {
       type: DataTypes.INTEGER,
