@@ -1,32 +1,21 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { Op } = require("sequelize");
 const { sequelize, models } = require("../db");
-const { cars: Car, car_images: CarImage, car_lines: CarLine, car_brands: CarBrand } = models;
+const {
+  cars: Car,
+  car_images: CarImage,
+  car_lines: CarLine,
+  car_brands: CarBrand,
+  promotion_products: PromotionProduct,
+  promotions: Promotion,
+} = models;
 const logger = require("../utils/logger");
 const ApiResponse = require("../utils/apiResponse");
 const { listCarsSchema, createCarSchema, updateCarSchema, carIdParamSchema } = require("../schemas/carSchema");
 const config = require("../config/config");
-
-const normalizeNumber = (v) => (v === undefined || v === null || v === "" ? undefined : Number(v));
-const normalizeBoolean = (v) => {
-  if (v === undefined || v === null || v === "") return undefined;
-  if (typeof v === "boolean") return v;
-  return v === "true" || v === "1" || v === 1 || v === "on";
-};
-const normalizeString = (v) => (v === undefined || v === null || v === "" ? undefined : String(v));
-
-const buildCarName = (lineInstance, modelValue) => {
-  if (!lineInstance) return null;
-  const brandName = lineInstance.brand ? lineInstance.brand.brand_name : undefined;
-  const lineName = lineInstance.line_name;
-  const modelPart = modelValue !== undefined && modelValue !== null ? String(modelValue) : undefined;
-  const parts = [brandName, lineName, modelPart]
-    .map((part) => (part === undefined || part === null ? null : String(part).trim()))
-    .filter((part) => part && part.length);
-  if (!parts.length) return null;
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-};
+const {updateCarPrice, normalizeNumber, buildCarName, selectBestPromotion, computePromotionPrice, toPriceNumber, normalizeBoolean, normalizeString} = require("../services/carService")
 
 const listCars = async (req, res) => {
   const response = new ApiResponse();
@@ -362,4 +351,126 @@ const activateCar = async (req, res) => {
   }
 };
 
-module.exports = { listCars, createCar, updateCar, deactivateCar, activateCar };
+const listCatalogCars = async (req, res) => {
+  const response = new ApiResponse();
+  try {
+    const now = new Date();
+    const items = await Car.findAll({
+      where: { status: true },
+      attributes: [
+        "car_id",
+        "car_name",
+        "line_id",
+        "color",
+        "engine_capacity",
+        "type_car",
+        "transmission",
+        "model",
+        "sale_price",
+        "purchase_price",
+        "stock",
+      ],
+      include: [
+        {
+          model: CarImage,
+          as: "car_images",
+          attributes: ["car_image_id", "image_url", "is_main"],
+        },
+        {
+          model: CarLine,
+          as: "line",
+          attributes: ["line_id", "line_name", "brand_id"],
+          include: [{ model: CarBrand, as: "brand", attributes: ["brand_id", "brand_name"] }],
+        },
+        {
+          model: PromotionProduct,
+          as: "promotion_products",
+          required: false,
+          attributes: ["promotion_product_id"],
+          where: { status: true },
+          include: [
+            {
+              model: Promotion,
+              as: "promotion",
+              required: true,
+              attributes: [
+                "promotion_id",
+                "promotion_name",
+                "discount_type",
+                "discount_value",
+                "start_date",
+                "end_date",
+                "status",
+              ],
+              where: {
+                status: true,
+                start_date: { [Op.lte]: now },
+                end_date: { [Op.or]: [{ [Op.gte]: now }, { [Op.eq]: null }] },
+              },
+            },
+          ],
+        },
+      ],
+      order: [["car_id", "ASC"]],
+    });
+
+    const mapped = items.map((car) => {
+      const obj = car.toJSON();
+      const basePriceCandidate = toPriceNumber(obj.sale_price) ?? toPriceNumber(obj.purchase_price);
+      const regularPrice = basePriceCandidate !== null ? Number(basePriceCandidate.toFixed(2)) : null;
+      const promotionData = regularPrice !== null ? selectBestPromotion(regularPrice, obj.promotion_products) : null;
+
+      const images = (obj.car_images || []).map((img) => ({
+        car_image_id: img.car_image_id,
+        image_url: `${config.protocol}://${config.host}:${config.port}${img.image_url}`,
+        is_main: !!img.is_main,
+      }));
+
+      const result = {
+        car_id: obj.car_id,
+        car_name: obj.car_name,
+        model: obj.model,
+        color: obj.color,
+        engine_capacity: Number(obj.engine_capacity),
+        type_car: obj.type_car,
+        transmission: obj.transmission,
+        stock: obj.stock,
+        regular_price: regularPrice,
+        promotion_price: promotionData ? promotionData.price : null,
+        images,
+        promotion: promotionData
+          ? {
+              promotion_id: promotionData.promotion.promotion_id,
+              promotion_name: promotionData.promotion.promotion_name,
+              discount_type: promotionData.promotion.discount_type,
+              discount_value: toPriceNumber(promotionData.promotion.discount_value),
+              start_date: promotionData.promotion.start_date,
+              end_date: promotionData.promotion.end_date,
+            }
+          : null,
+      };
+
+      if (obj.line) {
+        result.line = {
+          line_id: obj.line.line_id,
+          line_name: obj.line.line_name,
+        };
+        if (obj.line.brand) {
+          result.brand = {
+            brand_id: obj.line.brand.brand_id,
+            brand_name: obj.line.brand.brand_name,
+          };
+        }
+      }
+
+      return result;
+    });
+
+    return res.status(200).json(response.successResponse(mapped, "Catálogo de carros obtenido exitosamente"));
+  } catch (err) {
+    logger.error("Error al obtener catálogo de carros", err);
+    return res.status(500).json(response.errorResponse("Error al obtener catálogo de carros", err));
+  }
+};
+
+module.exports = { listCars, listCatalogCars, createCar, updateCar, deactivateCar, activateCar };
