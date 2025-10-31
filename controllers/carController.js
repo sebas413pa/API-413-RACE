@@ -2,7 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const { sequelize, models } = require("../db");
-const { cars: Car, car_images: CarImage } = models;
+const { cars: Car, car_images: CarImage, car_lines: CarLine, car_brands: CarBrand } = models;
 const logger = require("../utils/logger");
 const ApiResponse = require("../utils/apiResponse");
 const { listCarsSchema, createCarSchema, updateCarSchema, carIdParamSchema } = require("../schemas/carSchema");
@@ -15,6 +15,18 @@ const normalizeBoolean = (v) => {
   return v === "true" || v === "1" || v === 1 || v === "on";
 };
 const normalizeString = (v) => (v === undefined || v === null || v === "" ? undefined : String(v));
+
+const buildCarName = (lineInstance, modelValue) => {
+  if (!lineInstance) return null;
+  const brandName = lineInstance.brand ? lineInstance.brand.brand_name : undefined;
+  const lineName = lineInstance.line_name;
+  const modelPart = modelValue !== undefined && modelValue !== null ? String(modelValue) : undefined;
+  const parts = [brandName, lineName, modelPart]
+    .map((part) => (part === undefined || part === null ? null : String(part).trim()))
+    .filter((part) => part && part.length);
+  if (!parts.length) return null;
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+};
 
 const listCars = async (req, res) => {
   const response = new ApiResponse();
@@ -83,17 +95,19 @@ const createCar = async (req, res) => {
   logger.debug('createCar - files received', files.map(f => ({ fieldname: f.fieldname, filename: f.filename })));
   const t = await sequelize.transaction();
   try {
-    if (value.line_id) {
-      const CarLine = models.car_lines;
-      const line = await CarLine.findByPk(value.line_id, { transaction: t });
-      if (!line) {
-        await t.rollback();
-        return res.status(404).json(response.errorResponse("line_id no encontrado"));
-      }
+    const line = await CarLine.findByPk(value.line_id, {
+      include: [{ model: CarBrand, as: "brand" }],
+      transaction: t,
+    });
+    if (!line) {
+      await t.rollback();
+      return res.status(404).json(response.errorResponse("line_id no encontrado"));
     }
 
-  const car = await Car.create(value, { transaction: t });
-  logger.debug('createCar - car created', { car_id: car.car_id });
+    const carPayload = { ...value, car_name: buildCarName(line, value.model) };
+
+    const car = await Car.create(carPayload, { transaction: t });
+    logger.debug('createCar - car created', { car_id: car.car_id, car_name: car.car_name });
 
     if (files.length) {
       const main_index = typeof req.body.main_image_index !== "undefined" ? Number(req.body.main_image_index) : 0;
@@ -192,14 +206,29 @@ const updateCar = async (req, res) => {
       return res.status(404).json(response.errorResponse("No encontrado"));
     }
 
+    let targetLine;
     if (value.line_id) {
-      const CarLine = models.car_lines;
-      const line = await CarLine.findByPk(value.line_id, { transaction: t });
-      if (!line) {
+      targetLine = await CarLine.findByPk(value.line_id, {
+        include: [{ model: CarBrand, as: "brand" }],
+        transaction: t,
+      });
+      if (!targetLine) {
+        await t.rollback();
+        return res.status(404).json(response.errorResponse("line_id no encontrado"));
+      }
+    } else {
+      targetLine = await CarLine.findByPk(item.line_id, {
+        include: [{ model: CarBrand, as: "brand" }],
+        transaction: t,
+      });
+      if (!targetLine) {
         await t.rollback();
         return res.status(404).json(response.errorResponse("line_id no encontrado"));
       }
     }
+
+    const targetModel = typeof value.model !== "undefined" ? value.model : item.model;
+    value.car_name = buildCarName(targetLine, targetModel);
 
     await item.update(value, { transaction: t });
 
