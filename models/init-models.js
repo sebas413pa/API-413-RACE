@@ -62,8 +62,6 @@ function initModels(sequelize) {
   car_categories.hasMany(car_lines, { as: "car_lines", foreignKey: "category_id"});
   cars.belongsTo(car_lines, { as: "line", foreignKey: "line_id"});
   car_lines.hasMany(cars, { as: "cars", foreignKey: "line_id"});
-  batches.belongsTo(cars, { as: "car", foreignKey: "car_id"});
-  cars.hasMany(batches, { as: "batches", foreignKey: "car_id"});
   car_images.belongsTo(cars, { as: "car", foreignKey: "car_id"});
   cars.hasMany(car_images, { as: "car_images", foreignKey: "car_id"});
   promotion_products.belongsTo(cars, { as: "car", foreignKey: "car_id"});

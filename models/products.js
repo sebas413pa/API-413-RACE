@@ -24,13 +24,13 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       defaultValue: 0
     },
-    purchase_price: {
+    price: {
       type: DataTypes.DECIMAL(10,2),
       allowNull: false
     },
-    sale_price: {
+    purchase_price: {
       type: DataTypes.DECIMAL(10,2),
-      allowNull: false
+      allowNull: true
     },
     category_product_id: {
       type: DataTypes.INTEGER,
@@ -52,11 +52,6 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.BOOLEAN,
       allowNull: true,
       defaultValue: 1
-    },
-    profit_margin: {
-      type: DataTypes.DECIMAL(5,2),
-      allowNull: true,
-      defaultValue: 0.00
     }
   }, {
     sequelize,

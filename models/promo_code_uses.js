@@ -34,11 +34,6 @@ module.exports = function(sequelize, DataTypes) {
     discount_amount: {
       type: DataTypes.DECIMAL(10,2),
       allowNull: false
-    },
-    status: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: 1
     }
   }, {
     sequelize,

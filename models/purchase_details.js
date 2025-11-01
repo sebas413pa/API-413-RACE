@@ -43,16 +43,11 @@ module.exports = function(sequelize, DataTypes) {
     subtotal: {
       type: DataTypes.DECIMAL(10,2),
       allowNull: true
-    },
-    status: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: 1
     }
   }, {
     sequelize,
     tableName: 'purchase_details',
-    timestamps: true,
+    timestamps: false,
     indexes: [
       {
         name: "PRIMARY",

@@ -31,11 +31,6 @@ module.exports = function(sequelize, DataTypes) {
     total: {
       type: DataTypes.DECIMAL(10,2),
       allowNull: true
-    },
-    is_active: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: 1
     }
   }, {
     sequelize,
