@@ -117,6 +117,9 @@ const createEmployee = async (req, res) => {
     const existingUser = await User.findOne({ where: { username } });
     if (existingUser) return res.status(400).json(response.errorResponse('El nombre de usuario ya existe'));
 
+    const existingMail = await User.findOne({ where: { email } });
+    if (existingMail) return res.status(400).json(response.errorResponse('El correo ya existe'));
+
     const role = await Role.findByPk(role_id);
     if (!role) return res.status(404).json(response.errorResponse('Rol no encontrado'));
 
@@ -129,6 +132,7 @@ const createEmployee = async (req, res) => {
       email,
       password: hashedPassword,
       status: true,
+      mustChangePassword: 1
     });
 
     const newEmployee = await Employee.create({
