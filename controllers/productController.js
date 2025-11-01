@@ -70,6 +70,9 @@ const ensureAbsoluteUrl = (url) => {
 const removeFileQuietly = (absolutePath) => {
   if (!absolutePath) return;
   try {
+    if (!fs.existsSync(absolutePath)) {
+      return;
+    }
     fs.unlinkSync(absolutePath);
   } catch (err) {
     logger.warn('No se pudo eliminar archivo', { absolutePath, err });
@@ -164,19 +167,8 @@ const createProduct = async (req, res) => {
       if (file && file.path) removeFileQuietly(file.path);
     }
   };
-  const validationPayload = {};
-  setIfDefined(validationPayload, 'name', normalizeNullableString(req.body.name));
-  setIfDefined(validationPayload, 'description', normalizeNullableString(req.body.description));
-  setIfDefined(validationPayload, 'image_url', normalizeNullableString(req.body.image_url));
-  setIfDefined(validationPayload, 'stock', normalizeNumber(req.body.stock));
-  const salePriceInputCreate = typeof req.body.sale_price !== 'undefined' ? req.body.sale_price : req.body.price;
-  setIfDefined(validationPayload, 'sale_price', normalizeNumber(salePriceInputCreate));
-  setIfDefined(validationPayload, 'purchase_price', normalizeNumber(req.body.purchase_price));
-  setIfDefined(validationPayload, 'category_product_id', normalizeNumber(req.body.category_product_id));
-  setIfDefined(validationPayload, 'brand_product_id', normalizeNumber(req.body.brand_product_id));
-  setIfDefined(validationPayload, 'status', normalizeBoolean(req.body.status));
 
-  const { error, value } = createProductSchema.validate(validationPayload, { abortEarly: false, stripUnknown: true });
+  const { error, value } = createProductSchema.validate(req.body);
   if (error) {
     cleanupUploads();
     return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
@@ -316,19 +308,8 @@ const updateProduct = async (req, res) => {
       if (file && file.path) removeFileQuietly(file.path);
     }
   };
-  const validationPayload = {};
-  setIfDefined(validationPayload, 'name', normalizeNullableString(req.body.name));
-  setIfDefined(validationPayload, 'description', normalizeNullableString(req.body.description));
-  setIfDefined(validationPayload, 'image_url', normalizeNullableString(req.body.image_url));
-  setIfDefined(validationPayload, 'stock', normalizeNumber(req.body.stock));
-  const salePriceInputUpdate = typeof req.body.sale_price !== 'undefined' ? req.body.sale_price : req.body.price;
-  setIfDefined(validationPayload, 'sale_price', normalizeNumber(salePriceInputUpdate));
-  setIfDefined(validationPayload, 'purchase_price', normalizeNumber(req.body.purchase_price));
-  setIfDefined(validationPayload, 'category_product_id', normalizeNumber(req.body.category_product_id));
-  setIfDefined(validationPayload, 'brand_product_id', normalizeNumber(req.body.brand_product_id));
-  setIfDefined(validationPayload, 'status', normalizeBoolean(req.body.status));
 
-  const { error, value } = updateProductSchema.validate(validationPayload, { abortEarly: false, stripUnknown: true });
+  const { error, value } = updateProductSchema.validate(req.body);
   if (error) {
     cleanupUploads();
     return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
@@ -337,6 +318,8 @@ const updateProduct = async (req, res) => {
   try {
     const item = await Product.findByPk(product_id);
     if (!item) return res.status(404).json(response.errorResponse('Producto no encontrado'));
+
+    const previousImage = item.image_url;
 
     if (value.brand_product_id) {
       const brand = await BrandProduct.findByPk(value.brand_product_id);
@@ -354,7 +337,6 @@ const updateProduct = async (req, res) => {
       }
     }
 
-    const previousImage = item.image_url;
     if (uploadFile) {
       value.image_url = toRelativeUploadPath(uploadFile.filename);
     } else if (typeof value.image_url !== 'undefined') {
@@ -363,16 +345,13 @@ const updateProduct = async (req, res) => {
       }
     }
 
+    const nextImageValue = typeof value.image_url !== 'undefined' ? value.image_url : previousImage;
+
     const updated = await item.update(value);
     const data = updated.toJSON();
     data.image_url = ensureAbsoluteUrl(data.image_url);
 
-    if (uploadFile && previousImage) {
-      const absolute = toAbsoluteUploadPath(previousImage);
-      removeFileQuietly(absolute);
-    }
-
-    if (!uploadFile && typeof value.image_url !== 'undefined' && value.image_url === null && previousImage) {
+    if (previousImage && previousImage !== nextImageValue) {
       const absolute = toAbsoluteUploadPath(previousImage);
       removeFileQuietly(absolute);
     }
