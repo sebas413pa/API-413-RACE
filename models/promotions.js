@@ -26,7 +26,7 @@ module.exports = function(sequelize, DataTypes) {
     },
     end_date: {
       type: DataTypes.DATE,
-      allowNull: false
+      allowNull: true
     },
     status: {
       type: DataTypes.BOOLEAN,
