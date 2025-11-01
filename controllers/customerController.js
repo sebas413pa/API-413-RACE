@@ -41,16 +41,18 @@ const createCustomer = async (req, res) => {
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
 
   try {
-    const { username, email, role_id, first_name, last_name, birthday, gender, phone, address, city_id } = value;
+    const { username, email, password, role_id, first_name, last_name, birthday, gender, phone, address, city_id } = value;
 
     const existingUser = await User.findOne({ where: { username } });
     if (existingUser) return res.status(400).json(response.errorResponse('El nombre de usuario ya existe'));
 
+    const existingMail = await User.findOne({ where: { email } });
+    if (existingMail) return res.status(400).json(response.errorResponse('El correo ya existe'));
+
     const role = await Role.findByPk(role_id);
     if (!role) return res.status(404).json(response.errorResponse('Rol no encontrado'));
 
-    const tempPassword = crypto.randomBytes(6).toString('base64').slice(0, 8);
-    const hashedPassword = await bcrypt.hash(tempPassword, 12);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const newUser = await User.create({
       role_id,
@@ -73,7 +75,7 @@ const createCustomer = async (req, res) => {
 
     return res.status(201).json(
       response.successResponse(
-        { customer: newCustomer, tempPassword },
+        { customer: newCustomer},
         'Cliente y usuario creados exitosamente'
       )
     );
