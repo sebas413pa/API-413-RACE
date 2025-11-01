@@ -4,10 +4,11 @@
   const logger = require('../utils/logger');  
   const ApiResponse = require('../utils/apiResponse');
   const { loginUser } = require('../schemas/authSchema');
-  const { users: User, tokens: Token, roles: Role } = models;  
+  const { users: User, tokens: Token, roles: Role, customers: Customer, cities: City} = models;  
   const config = require('../config/config');  
   const jwt = require('jsonwebtoken');
   const ms = require('ms');
+const { custom } = require('joi');
   
 
 
@@ -181,13 +182,45 @@
     if (!userExists) {
       return res.status(401).json(response.errorResponse("Usuario no autenticado"));
     }
+    let customerExists = null;
+    if(userExists.role.role_name === 'Cliente'){
+        customerExists = await Customer.findOne({
+        where:{
+          user_id: userExists.user_id
+        },
+        include: [
+      {
+        model: City,
+        as: "city",
+        attributes: ["city_id", "city_name"]
+      }
+    ]
+      });
+    }
     logger.info('Usuario autenticado');
     return res.status(200).json(response.successResponse({
       user: {
         user_id: userExists.user_id,
         username: userExists.username,
-        role_name: userExists.role.role_name
+        role_name: userExists.role.role_name,
+        email: userExists.email,
       },
+       customer: customerExists
+            ? {
+                first_name: customerExists.first_name,
+                last_name: customerExists.last_name,
+                birthay: customerExists.birthay,
+                gender: customerExists.gender,
+                phone: customerExists.phone,
+                address: customerExists.address,
+                city: customerExists.city
+                  ? {
+                      city_id: customerExists.ci1ty.city_id,
+                      city_name: customerExists.city.city_name
+                    }
+                  : null
+              }
+            : null,
     }, "Usuario autenticado"));
     
   } catch (error) {

@@ -7,6 +7,28 @@ const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const { listEmployeeSchema,createEmployeeSchema, updateEmployeeSchema, employeeIdParamSchema, usernameParamSchema, changeOwnPasswordSchema } = require('../schemas/employeeSchema');
 
+function generateStrongPassword() {
+  const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const numbers = "0123456789";
+  const specials = "!@#$%^&*()_+{}[]|:;<>,.?/~`-=";
+
+  const allChars = uppercase + lowercase + numbers + specials;
+
+  let password = "";
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += specials[Math.floor(Math.random() * specials.length)];
+
+  const remainingLength = Math.floor(Math.random() * 5) + 4; 
+  for (let i = 0; i < remainingLength; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+}
+
 const changePassword = async (req, res) => {
   const response = new ApiResponse();
   const userId = req.user?.user_id; 
@@ -95,10 +117,13 @@ const createEmployee = async (req, res) => {
     const existingUser = await User.findOne({ where: { username } });
     if (existingUser) return res.status(400).json(response.errorResponse('El nombre de usuario ya existe'));
 
+    const existingMail = await User.findOne({ where: { email } });
+    if (existingMail) return res.status(400).json(response.errorResponse('El correo ya existe'));
+
     const role = await Role.findByPk(role_id);
     if (!role) return res.status(404).json(response.errorResponse('Rol no encontrado'));
 
-    const tempPassword = crypto.randomBytes(6).toString('base64').slice(0, 8);
+    const tempPassword = generateStrongPassword();
     const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
     const newUser = await User.create({
@@ -107,6 +132,7 @@ const createEmployee = async (req, res) => {
       email,
       password: hashedPassword,
       status: true,
+      mustChangePassword: 1
     });
 
     const newEmployee = await Employee.create({

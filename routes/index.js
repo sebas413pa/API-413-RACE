@@ -30,7 +30,7 @@ router.use('/car-brands', authenticateJWT, checkRole(['Administrador','Empleado'
 router.use('/car-categories', authenticateJWT, checkRole(['Administrador','Empleado']), carCategoryRoutes);
 router.use('/car-images', authenticateJWT, checkRole(['Administrador','Empleado']), carImageRoutes);
 router.use('/car-lines', authenticateJWT, checkRole(['Administrador','Empleado']), carLineRoutes);
-router.use('/cars', authenticateJWT, checkRole(['Administrador','Empleado']), carRoutes);
+router.use('/cars', carRoutes);
 router.use('/category-products', authenticateJWT, checkRole(['Administrador','Empleado']), categoryProductRoutes);
 router.use('/products', productRoutes);
 router.use('/promotions', authenticateJWT, checkRole(['Administrador','Empleado']), promotionRoutes);
