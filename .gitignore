@@ -153,3 +153,9 @@ Icon
 # Files that might appear on network shares
 .Spotlight-V100
 .Trashes
+
+# Upload directories (keep structure, ignore uploaded assets)
+uploads/**
+!uploads/
+!uploads/**/
+!uploads/**/.gitkeep
