@@ -34,6 +34,20 @@ const listCustomers = async (req, res) => {
     return res.status(500).json(response.errorResponse('Error al listar clientes', error));
   }
 };
+const listCities = async(req,res) =>{
+    const response = new ApiResponse(); 
+  try {
+    const cities = await City.findAll({
+      where:{
+        status: true
+      }
+    });
+    return res.status(200).json(response.successResponse('Ciudades obtenidos exitosamente', cities));
+  } catch (error) {
+    logger.error('Error al listar Ciudades', error);
+    return res.status(500).json(response.errorResponse('Error al listar Ciudades', error));
+  }
+};
 
 const createCustomer = async (req, res) => {
   const response = new ApiResponse();
@@ -151,4 +165,4 @@ const activateCustomer = async (req, res) => {
 };
 
 
-module.exports = { listCustomers, createCustomer, updateCustomer, deactivateCustomer, activateCustomer };
+module.exports = { listCustomers, createCustomer, updateCustomer, deactivateCustomer, activateCustomer, listCities };
