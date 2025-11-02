@@ -8,8 +8,9 @@ const {sales: Sale, sale_details: SaleDetail, customers: Customer, products: Pro
 const ApiResponse = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const {saleBaseSchema, listSchema, saleStatusSchema, SALE_STATUS_VALUES, carSaleSchema} = require('../schemas/saleSchema');
-const { PEPS, decreaseBatch } = require('../services/batchService')
+const { PEPS, decreaseBatch, restoreBatchStock   } = require('../services/batchService')
 const { getProductEffectivePrice } = require('../services/productService');
+const { getCarEffectivePrice } = require('../services/carService');
 
 const buildSaleIncludes = () => ([
     {
@@ -70,59 +71,7 @@ const fetchSaleWithRelations = async(saleId, options = {}) => {
     return Sale.findOne(query);
 };
 
-const restoreBatchStock = async({ productId, carId, quantity, transaction }) => {
-    if (!quantity || (!productId && !carId)) {
-        return;
-    }
 
-    const where = productId ? { product_id: productId } : { car_id: carId };
-    const batchQuery = {
-        where,
-        order: [['received_at', 'ASC'], ['batch_id', 'ASC']],
-        transaction
-    };
-
-    if (transaction) {
-        batchQuery.lock = transaction.LOCK.UPDATE;
-    }
-
-    const batches = await Batch.findAll(batchQuery);
-
-    if (!batches.length) {
-        logger.warn('No se encontraron lotes para restaurar inventario', { productId, carId });
-        return;
-    }
-
-    let remaining = Number(quantity);
-
-    for (const batch of batches) {
-        const batchQuantity = Number(batch.quantity) || 0;
-        const batchAvailable = Number(batch.available_qty) || 0;
-        const capacity = batchQuantity - batchAvailable;
-
-        if (capacity <= 0) {
-            if (batchAvailable > 0 && batch.status === 0) {
-                await batch.update({ status: 1 }, { transaction });
-            }
-            continue;
-        }
-
-        const restoreAmount = Math.min(capacity, remaining);
-        if (restoreAmount > 0) {
-            const newAvailable = batchAvailable + restoreAmount;
-            await batch.update({ available_qty: newAvailable, status: 1 }, { transaction });
-            remaining -= restoreAmount;
-        }
-
-        if (remaining <= 0) {
-            break;
-        }
-    }
-
-    if (remaining > 0) {
-        logger.warn('Cantidad restante sin lote para restaurar', { productId, carId, remaining });
-    }
-};
 
 const listSales = async(req, res) =>{
     const response = new ApiResponse();
@@ -132,12 +81,12 @@ const listSales = async(req, res) =>{
         return res.status(400).json(response.errorResponse('Parámetros inválidos', error));
     }
 
-    const { sale_id, car_id, product_id, customer_id, start_date, end_date, active } = value;
+    const { sale_id, car_id, product_id, customer_id: customerIdFilter, start_date, end_date, active } = value;
     const saleWhere = {};
     const detailWhere = {};
+    const user = req.user;
 
     if (sale_id) saleWhere.sale_id = sale_id;
-    if (customer_id) saleWhere.customer_id = customer_id;
     if (active) saleWhere.status = active;
     if (start_date || end_date) {
         saleWhere.sale_date = {};
@@ -164,6 +113,17 @@ const listSales = async(req, res) =>{
     }
 
     try {
+        if (user?.role === 'Cliente') {
+            const customer = await Customer.findOne({ where: { user_id: user.user_id } });
+            if (!customer) {
+                logger.warn('Cliente autenticado sin registro asociado al listar ventas', { user_id: user.user_id });
+                return res.status(404).json(response.errorResponse('Cliente no encontrado'));
+            }
+            saleWhere.customer_id = customer.customer_id;
+        } else if (customerIdFilter) {
+            saleWhere.customer_id = customerIdFilter;
+        }
+
         const items = await Sale.findAll({
             where: saleWhere,
             include: [
@@ -442,9 +402,11 @@ const createCarSale = async(req, res) => {
         return res.status(400).json(response.errorResponse('Datos inválidos', error));
     }
 
-    const { customer_id: customerId, quotation_id: quotationId, payment, details } = value;
+    const { customer_id: customerId, quotation_id: quotationId, promo_code: promoCodeInput, payment, details } = value;
     const vehicleDetail = details[0];
     const quantity = Number(vehicleDetail.quantity || 1);
+    const manualSalePriceRaw = vehicleDetail.sale_price;
+    const hasManualSalePrice = manualSalePriceRaw !== undefined && manualSalePriceRaw !== null;
 
     const transaction = await sequelize.transaction();
 
@@ -526,16 +488,8 @@ const createCarSale = async(req, res) => {
             return res.status(400).json(response.errorResponse('No hay stock suficiente del vehículo solicitado'));
         }
 
-        if (linkedQuotation && linkedQuotation.car_id !== car.car_id) {
-            if (!transaction.finished) {
-                await transaction.rollback();
-            }
-            logger.warn('Cotización no corresponde al vehículo vendido', { quotationId, car_id: car.car_id });
-            return res.status(409).json(response.errorResponse('La cotización no corresponde al vehículo seleccionado'));
-        }
-
-        const unitPrice = Number(car.sale_price);
-        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        const baseUnitPrice = Number(car.sale_price);
+        if (!Number.isFinite(baseUnitPrice) || baseUnitPrice < 0) {
             if (!transaction.finished) {
                 await transaction.rollback();
             }
@@ -543,7 +497,48 @@ const createCarSale = async(req, res) => {
             return res.status(400).json(response.errorResponse('Vehículo sin precio de venta válido'));
         }
 
-        const lineSubtotal = Number((unitPrice * quantity).toFixed(2));
+        if (hasManualSalePrice && promoCodeInput) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Intento de combinar precio manual con código promocional', { car_id: car.car_id, promo_code: promoCodeInput });
+            return res.status(409).json(response.errorResponse('No se puede aplicar un código promocional cuando se especifica un precio de venta manual'));
+        }
+
+        let lineSubtotal;
+        let lineTotal;
+        let lineDiscount = 0;
+        let unitPriceForDetail;
+
+        if (hasManualSalePrice) {
+            const manualSalePrice = Number(manualSalePriceRaw);
+            if (!Number.isFinite(manualSalePrice) || manualSalePrice <= 0) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Precio de venta manual inválido', { car_id: car.car_id, sale_price: manualSalePriceRaw });
+                return res.status(400).json(response.errorResponse('El precio de venta especificado no es válido'));
+            }
+
+            unitPriceForDetail = Number(manualSalePrice.toFixed(2));
+            lineSubtotal = Number((unitPriceForDetail * quantity).toFixed(2));
+            lineTotal = lineSubtotal;
+        } else {
+            const { price: effectiveUnitPrice } = await getCarEffectivePrice(car.car_id, transaction, car);
+
+            if (effectiveUnitPrice === null) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Vehículo sin precio de venta efectivo', { car_id: car.car_id });
+                return res.status(400).json(response.errorResponse('Vehículo sin precio de venta válido'));
+            }
+
+            unitPriceForDetail = Number(effectiveUnitPrice.toFixed(2));
+            lineSubtotal = Number((baseUnitPrice * quantity).toFixed(2));
+            lineTotal = Number((unitPriceForDetail * quantity).toFixed(2));
+            lineDiscount = Math.max(Number((lineSubtotal - lineTotal).toFixed(2)), 0);
+        }
 
         const createdSale = await Sale.create({
             customer_id: customerId,
@@ -560,8 +555,8 @@ const createCarSale = async(req, res) => {
             sale_id: createdSale.sale_id,
             car_id: car.car_id,
             quantity,
-            unit_price: unitPrice,
-            subtotal: lineSubtotal
+            unit_price: unitPriceForDetail,
+            subtotal: lineTotal
         }, { transaction });
 
         const newStock = Number(car.stock) - quantity;
@@ -572,16 +567,118 @@ const createCarSale = async(req, res) => {
             await decreaseBatch(batch.batch_id, quantity, transaction);
         }
 
-        const subtotalRounded = Number(lineSubtotal.toFixed(2));
-        const total = subtotalRounded;
+        const subtotalRounded = lineSubtotal;
+        let total = lineTotal;
         const paymentAmountRounded = Number(Number(payment.amount).toFixed(2));
+        let promoDiscount = 0;
+
+        if (!hasManualSalePrice && promoCodeInput) {
+            const promoCode = await PromoCode.findOne({
+                where: { promo_code: promoCodeInput },
+                transaction,
+            });
+
+            if (!promoCode) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Código promocional no encontrado', { promo_code: promoCodeInput });
+                return res.status(404).json(response.errorResponse('Código promocional no encontrado'));
+            }
+
+            if (!promoCode.status) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Código promocional inactivo', { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse('Código promocional inactivo'));
+            }
+
+            if (promoCode.customer_id && promoCode.customer_id !== customerId) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Código promocional no pertenece al cliente', { promo_code_id: promoCode.promo_code_id, customerId });
+                return res.status(403).json(response.errorResponse('Este código promocional no está asignado a este cliente'));
+            }
+
+            const now = new Date();
+            const startDate = promoCode.start_date ? new Date(promoCode.start_date) : null;
+            const endDate = promoCode.end_date ? new Date(promoCode.end_date) : null;
+
+            if (startDate && now < startDate) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Código promocional aún no disponible', { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse('El código promocional aún no está disponible'));
+            }
+
+            if (endDate && now > endDate) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Código promocional expirado', { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse('El código promocional ha expirado'));
+            }
+
+            const existingUse = await PromoCodeUse.findOne({
+                where: {
+                    promo_code_id: promoCode.promo_code_id,
+                    status: true,
+                },
+                transaction,
+            });
+
+            if (existingUse) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Código promocional ya utilizado', { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse('El código promocional ya fue utilizado'));
+            }
+
+            const minPurchase = promoCode.min_purchase_amount ? parseFloat(promoCode.min_purchase_amount) : 0;
+            if (minPurchase && total < minPurchase) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Total insuficiente para código promocional', { promo_code_id: promoCode.promo_code_id, total, minPurchase });
+                return res.status(409).json(response.errorResponse('El total de la compra no cumple con el mínimo requerido para el código'));
+            }
+
+            if (promoCode.discount_type === 'percentage') {
+                promoDiscount = (total * parseFloat(promoCode.discount_value)) / 100;
+            } else {
+                promoDiscount = parseFloat(promoCode.discount_value);
+            }
+
+            const maxDiscount = promoCode.max_discount_amount != null ? parseFloat(promoCode.max_discount_amount) : null;
+            if (maxDiscount !== null) {
+                promoDiscount = Math.min(promoDiscount, maxDiscount);
+            }
+
+            promoDiscount = Math.min(promoDiscount, total);
+            promoDiscount = Number(promoDiscount.toFixed(2));
+            total = Math.max(Number((total - promoDiscount).toFixed(2)), 0);
+
+            await PromoCodeUse.create({
+                promo_code_id: promoCode.promo_code_id,
+                customer_id: customerId,
+                sale_id: createdSale.sale_id,
+                discount_amount: promoDiscount,
+                status: true,
+            }, { transaction });
+        }
+
+        const discountCombined = Number((lineDiscount + promoDiscount).toFixed(2));
 
         if (Math.abs(paymentAmountRounded - total) > 0.01) {
             if (!transaction.finished) {
                 await transaction.rollback();
             }
             logger.warn('Monto de pago no coincide con el total de la venta de vehículo', { paymentAmount: paymentAmountRounded, total });
-            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta'));
+            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta', { paymentAmount: paymentAmountRounded, total }));
         }
 
         const paymentPayload = {
@@ -595,7 +692,7 @@ const createCarSale = async(req, res) => {
 
         await createdSale.update({
             subtotal: subtotalRounded,
-            discount: 0,
+            discount: discountCombined,
             total
         }, { transaction });
 
