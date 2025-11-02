@@ -11,4 +11,9 @@ router.patch('/activate/:customer_id', authenticateJWT, checkRole(['Administrado
 router.patch('/deactivate/:customer_id', authenticateJWT, checkRole(['Administrador', 'Empleado']), customerController.deactivateCustomer);
 router.get('/cities', customerController.listCities);
 
+//RECUPERACIÓN DE CONTRASEÑA
+router.post('/forgot-password', customerController.forgotPassword);
+router.post('/reset-password', customerController.resetPassword);
+
+
 module.exports = router;
