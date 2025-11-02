@@ -3,6 +3,7 @@ const logger = require('../utils/logger');
 const Batch = models.batches;
 const {createBatchSchema} = require('../schemas/batchSchema');
 const { Op } = require('sequelize');
+const { ExceptionHandler } = require('winston');
 
 
 const normalizeNumber = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v));
@@ -22,7 +23,6 @@ async function createBatch(batchObject, transaction) {
     if(error)
     {
         logger.error("Datos de lote invalidos", error)
-        await transaction.rollback()
         throw new Error("Datos de lote invalidos", error)
     }
     try
@@ -49,19 +49,21 @@ async function createBatch(batchObject, transaction) {
 };
 
 async function PEPS(carId,productId, transaction) {
-    const stockWhere = {};
+    const where = {};
 
     if (carId) {
-        stockWhere.carId = Array.isArray(carId) ? carId : [carId];
+        where.car_id = carId;
     }
     else if (productId) {
-        stockWhere.productId = Array.isArray(productId) ? productId : [productId];
+        where.product_id = productId;
     }
-    stockWhere.available_qty =  { [Op.gt]: 0 }    
+    console.log("Id del producto del lote", productId)
+    where.available_qty =  { [Op.gt]: 0 }   
+    where.status = 1 
     try
     {
         const batchPEPS = await Batch.findOne({
-            stockWhere,
+            where,
             order: [['received_at', 'ASC']],
             transaction
         })
@@ -85,7 +87,7 @@ async function decreaseBatch(batchId, quantity, transaction) {
     try{
         const batch = await Batch.findOne({
             where:{
-                remaining_quantity: {[Op.gt]: 0},
+                available_qty: {[Op.gt]: 0},
                 batch_id: batchId
             },
             transaction

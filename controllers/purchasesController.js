@@ -10,8 +10,8 @@ const {createBatch} = require('../services/batchService');
 const { Op } = require('sequelize');
 const {updateCarPrice} = require('../services/carService')
 const {updateProductPrice} = require('../services/productService')
-const listEntries = async (req, res) => {
-    
+
+const listEntries = async (req, res) => {    
     const user = req.user
     const response = new ApiResponse();
     const {error, value } = listPurchaseSchema.validate(req.query);
