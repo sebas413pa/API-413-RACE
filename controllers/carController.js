@@ -158,7 +158,6 @@ const updateCar = async (req, res) => {
     type_car: normalizeString(req.body.type_car),
     transmission: normalizeString(req.body.transmission),
     model: normalizeNumber(req.body.model),
-    price: normalizeNumber(req.body.price),
     stock: normalizeNumber(req.body.stock),
     status: normalizeBoolean(req.body.status),
   };
