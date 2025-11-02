@@ -15,7 +15,7 @@ async function updateProductPrice(product_id, new_price, transaction) {
             throw new Error("El carro no existe")
         }
 
-        const sale_price = new_price * productExists.profit_margin + new_price
+    const sale_price = Number((new_price / (1 - productExists.profit_margin / 100)).toFixed(2));
 
         await productExists.update({
             purchase_price: new_price,

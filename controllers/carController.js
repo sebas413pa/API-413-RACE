@@ -94,7 +94,7 @@ const createCar = async (req, res) => {
       return res.status(404).json(response.errorResponse("line_id no encontrado"));
     }
 
-    const salePrice = value.purchase_price * value.profit_margin/100 + value.purchase_price;
+  const salePrice = Number((value.purchase_price / (1 - value.profit_margin / 100)).toFixed(2));
     const carPayload = { ...value, car_name: buildCarName(line, value.model), sale_price: salePrice };
     const car = await Car.create(carPayload, { transaction: t });
     await updateCarPrice(car.car_id, car.purchase_price, t);
