@@ -68,14 +68,14 @@ const resetPassword = async (req,res) => {
         logger.warn(`Usuario no encontrado: ${username}`);
         return res.status(404).json(response.errorResponse("Usuario no encontrado"));
         }
-        const tempPassword = crypto.randomBytes(6).toString('hex');
+        const tempPassword = generateStrongPassword();
         const hashedPassword = await bcrypt.hash(tempPassword,12);
 
         await userExists.update({
             password: hashedPassword,
             mustChangePassword: true
         });
-          return res.status(200).json(response.successResponse(tempPassword,`Contraseña temporal asignada`));
+          return res.status(200).json(response.successResponse(tempPassword,"Contraseña temporal asignada"));
     }catch(error){
         logger.error("Error al actualizar la password", error);
         return res.status(500).json(response.errorResponse("Error al actualizar la password", error));
