@@ -1,6 +1,6 @@
 'use strict';
-const { models } = require('../db');
-const { customers: Customer, users: User, roles: Role } = models;
+const { sequelize, models } = require('../db');
+const { customers: Customer, users: User, roles: Role, promo_codes: PromoCode } = models;
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
@@ -9,8 +9,7 @@ const {listCustomersSchema,
     createCustomerSchema,
     updateCustomerSchema,
     customerIdParamSchema} = require('../schemas/customerSchema');
-const { cursorTo } = require('readline');
-
+const {createWelcomePromoCode} = require('../services/customerService')
 
 const listCustomers = async (req, res) => {
     const response = new ApiResponse();
@@ -57,42 +56,78 @@ const createCustomer = async (req, res) => {
   try {
     const { username, email, password, role_id, first_name, last_name, birthday, gender, phone, address, city_id } = value;
 
-    const existingUser = await User.findOne({ where: { username } });
-    if (existingUser) return res.status(400).json(response.errorResponse('El nombre de usuario ya existe'));
+    const transaction = await sequelize.transaction();
 
-    const existingMail = await User.findOne({ where: { email } });
-    if (existingMail) return res.status(400).json(response.errorResponse('El correo ya existe'));
+    try {
+      const existingUser = await User.findOne({ where: { username }, transaction });
+      if (existingUser) {
+        await transaction.rollback();
+        return res.status(400).json(response.errorResponse('El nombre de usuario ya existe'));
+      }
 
-    const role = await Role.findByPk(role_id);
-    if (!role) return res.status(404).json(response.errorResponse('Rol no encontrado'));
+      const existingMail = await User.findOne({ where: { email }, transaction });
+      if (existingMail) {
+        await transaction.rollback();
+        return res.status(400).json(response.errorResponse('El correo ya existe'));
+      }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+      const role = await Role.findByPk(role_id, { transaction });
+      if (!role) {
+        await transaction.rollback();
+        return res.status(404).json(response.errorResponse('Rol no encontrado'));
+      }
 
-    const newUser = await User.create({
-      role_id,
-      username,
-      email,
-      password: hashedPassword,
-      status: true,
-    });
+      const hashedPassword = await bcrypt.hash(password, 12);
 
-    const newCustomer = await Customer.create({
-      user_id: newUser.user_id,
-      first_name,
-      last_name,
-      birthday,
-      gender,
-      phone,
-      address,
-      city_id
-    });
+      const newUser = await User.create({
+        role_id,
+        username,
+        email,
+        password: hashedPassword,
+        status: true,
+      }, { transaction });
 
-    return res.status(201).json(
-      response.successResponse(
-        { customer: newCustomer},
-        'Cliente y usuario creados exitosamente'
-      )
-    );
+      const newCustomer = await Customer.create({
+        user_id: newUser.user_id,
+        first_name,
+        last_name,
+        birthday,
+        gender,
+        phone,
+        address,
+        city_id
+      }, { transaction });
+
+      const welcomePromo = await createWelcomePromoCode(newCustomer.customer_id, transaction);
+
+      await transaction.commit();
+
+      const customerData = newCustomer.toJSON ? newCustomer.toJSON() : newCustomer;
+      const promoData = welcomePromo.toJSON ? welcomePromo.toJSON() : welcomePromo;
+
+      return res.status(201).json(
+        response.successResponse(
+          {
+            customer: customerData,
+            promo_code: {
+              promo_code_id: promoData.promo_code_id,
+              promo_code: promoData.promo_code,
+              discount_type: promoData.discount_type,
+              discount_value: Number(promoData.discount_value),
+              start_date: promoData.start_date,
+              end_date: promoData.end_date,
+              status: promoData.status,
+            },
+          },
+          'Cliente, usuario y código promocional creados exitosamente'
+        )
+      );
+    } catch (err) {
+      if (transaction && !transaction.finished) {
+        await transaction.rollback();
+      }
+      throw err;
+    }
   } catch (error) {
     logger.error('Error al crear cliente', error);
     return res.status(500).json(response.errorResponse('Error al crear cliente', error));
