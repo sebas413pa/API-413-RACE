@@ -27,7 +27,7 @@ module.exports = function(sequelize, DataTypes) {
     payment_date: {
       type: DataTypes.DATE,
       allowNull: true,
-      defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP')
+      defaultValue: Sequelize.Sequelize.fn('current_timestamp')
     },
     status: {
       type: DataTypes.ENUM('Pendiente','Aprobado','Rechazado','Reembolsado'),

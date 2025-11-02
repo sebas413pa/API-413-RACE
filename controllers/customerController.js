@@ -1,6 +1,9 @@
 'use strict';
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+const config = require('../config/config');
 const { sequelize, models } = require('../db');
-const { customers: Customer, users: User, roles: Role, promo_codes: PromoCode, cities:City } = models;
+const { customers: Customer, users: User, roles: Role, promo_codes: PromoCode, cities:City, reset_tokens: ResetToken } = models;
 const bcrypt = require('bcryptjs');
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
@@ -8,6 +11,7 @@ const {listCustomersSchema,
     createCustomerSchema,
     updateCustomerSchema,
     customerIdParamSchema} = require('../schemas/customerSchema');
+const { resetPasswordSchema } = require("../schemas/recoverSchema");
 const {createWelcomePromoCode} = require('../services/customerService')
 
 const listCustomers = async (req, res) => {
@@ -218,5 +222,90 @@ const activateCustomer = async (req, res) => {
   }
 };
 
+const forgotPassword = async(req,res)=>{
+   try {
+    const { email } = req.body;
+    const user = await User.findOne({ where: { email } });
 
-module.exports = { listCustomers, createCustomer, updateCustomer, deactivateCustomer, activateCustomer, listCities };
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    await ResetToken.create({ user_id: user.user_id, token, expires_at: expiresAt });
+
+    // Configurar transporte de correo
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: config.mail.mailUser,
+        pass: config.mail.mailPass
+      }
+    });
+
+    const resetUrl = `${config.cors.origin}/reset-password?token=${token}`;
+
+    await transporter.sendMail({
+      from: `"Soporte 413-RACE" <${config.mail.mailUser}>`,
+      to: user.email,
+      subject: 'Recuperación de contraseña',
+      html: `
+        <h2>Solicitud de recuperación de contraseña</h2>
+        <p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>
+        <a href="${resetUrl}" target="_blank">${resetUrl}</a>
+        <p>Este enlace expira en 1 hora.</p>
+      `
+    });
+
+    res.json({ message: 'Correo de recuperación enviado correctamente' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al solicitar recuperación' });
+  }
+};
+
+
+const resetPassword = async (req, res) => {
+  const response = new ApiResponse();
+  const { error, value } = resetPasswordSchema.validate(req.body, { abortEarly: false });
+
+  if (error) {
+    return res
+      .status(400)
+      .json(response.errorResponse('Datos inválidos', error.details));
+  }
+
+  try {
+    const { token, newPassword } = value;
+
+    const resetToken = await ResetToken.findOne({ where: { token, used: false } });
+    if (!resetToken)
+      return res
+        .status(400)
+        .json(response.errorResponse('Token inválido o ya utilizado'));
+
+    if (new Date() > resetToken.expires_at)
+      return res.status(400).json(response.errorResponse('Token expirado'));
+
+    const user = await User.findByPk(resetToken.user_id);
+    if (!user)
+      return res.status(404).json(response.errorResponse('Usuario no encontrado'));
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await user.update({ password: hashedPassword });
+    await resetToken.update({ used: true });
+
+    return res
+      .status(200)
+      .json(response.successResponse('Contraseña restablecida correctamente'));
+  } catch (error) {
+    console.error('Error al restablecer contraseña:', error);
+    return res
+      .status(500)
+      .json(response.errorResponse('Error al restablecer contraseña', error));
+  }
+};
+
+
+module.exports = { listCustomers, createCustomer, updateCustomer, deactivateCustomer, activateCustomer, listCities, forgotPassword, resetPassword};

@@ -9,18 +9,10 @@ module.exports = function(sequelize, DataTypes) {
     },
     product_id: {
       type: DataTypes.INTEGER,
-      allowNull: true,
+      allowNull: false,
       references: {
         model: 'products',
         key: 'product_id'
-      }
-    },
-    car_id: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      references: {
-        model: 'cars',
-        key: 'car_id'
       }
     },
     supplier_id: {
@@ -94,13 +86,6 @@ module.exports = function(sequelize, DataTypes) {
         using: "BTREE",
         fields: [
           { name: "supplier_id" },
-        ]
-      },
-      {
-        name: "fk_batches_car",
-        using: "BTREE",
-        fields: [
-          { name: "car_id" },
         ]
       },
     ]

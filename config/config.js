@@ -49,6 +49,10 @@ const config = {
     google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET
+  },
+  mail: {
+    mailUser: process.env.MAIL_USER,
+    mailPass: process.env.MAIL_PASS
   }
 };
 
