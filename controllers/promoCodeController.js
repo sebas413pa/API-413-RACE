@@ -1,6 +1,6 @@
 'use strict';
+const { models, sequelize } = require('../db');
 const { Op, ForeignKeyConstraintError } = require('sequelize');
-const { models } = require('../db');
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const {
@@ -14,11 +14,6 @@ const {
 const { promo_codes: PromoCode, promotions: Promotion, customers: Customer } = models;
 
 const promoCodeIncludes = [
-  {
-    model: Promotion,
-    as: 'promotion',
-    attributes: ['promotion_name', 'discount_type', 'discount_value', 'start_date', 'end_date', 'status'],
-  },
   {
     model: Customer,
     as: 'customer',
@@ -107,21 +102,18 @@ const createPromoCode = async (req, res) => {
     logger.warn('Datos inválidos al crear código promocional', error);
     return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
   }
-
+  const t = await sequelize.transaction();
   try {
-    const [promotion, customer] = await Promise.all([
-      Promotion.findByPk(value.promotion_id),
-      Customer.findByPk(value.customer_id),
+    const customer = await Promise.all([
+      Customer.findByPk(value.customer_id, {t}),
     ]);
 
-    if (!promotion) {
-      return res.status(404).json(response.errorResponse('Promoción asociada no encontrada'));
-    }
     if (!customer) {
+      if (!transaction.finished) await transaction.rollback();
       return res.status(404).json(response.errorResponse('Cliente asociado no encontrado'));
     }
 
-    const existingCode = await PromoCode.findOne({ where: { promo_code: value.promo_code } });
+    const existingCode = await PromoCode.findOne({ where: { promo_code: value.promo_code }, t });
     if (existingCode) {
       return res.status(409).json(response.errorResponse('El código promocional ya existe'));
     }
@@ -138,12 +130,13 @@ const createPromoCode = async (req, res) => {
       status: typeof value.status === 'undefined' ? true : value.status,
     };
 
-    const created = await PromoCode.create(payload);
-    const result = await PromoCode.findByPk(created.promo_code_id, { include: promoCodeIncludes });
+    const created = await PromoCode.create(payload, {t});
+    const result = await PromoCode.findByPk(created.promo_code_id, { include: promoCodeIncludes, t });
 
     logger.info('Código promocional creado exitosamente', { promo_code_id: created.promo_code_id });
     return res.status(201).json(response.successResponse(result, 'Código promocional creado exitosamente'));
   } catch (err) {
+    if (!t.finished) await t.rollback();
     logger.error('Error al crear código promocional', err);
     return res.status(500).json(response.errorResponse('Error al crear código promocional', err));
   }

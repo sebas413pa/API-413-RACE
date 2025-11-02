@@ -140,5 +140,58 @@ async function increaseBatch(batch_id, qty, transaction){
     logger.info("Lote restablecido exitosamente")
 };
 
+const restoreBatchStock = async({ productId, carId, quantity, transaction }) => {
+    if (!quantity || (!productId && !carId)) {
+        return;
+    }
 
-module.exports = {createBatch, PEPS, decreaseBatch, increaseBatch}
+    const where = productId ? { product_id: productId } : { car_id: carId };
+    const batchQuery = {
+        where,
+        order: [['received_at', 'ASC'], ['batch_id', 'ASC']],
+        transaction
+    };
+
+    if (transaction) {
+        batchQuery.lock = transaction.LOCK.UPDATE;
+    }
+
+    const batches = await Batch.findAll(batchQuery);
+
+    if (!batches.length) {
+        logger.warn('No se encontraron lotes para restaurar inventario', { productId, carId });
+        return;
+    }
+
+    let remaining = Number(quantity);
+
+    for (const batch of batches) {
+        const batchQuantity = Number(batch.quantity) || 0;
+        const batchAvailable = Number(batch.available_qty) || 0;
+        const capacity = batchQuantity - batchAvailable;
+
+        if (capacity <= 0) {
+            if (batchAvailable > 0 && batch.status === 0) {
+                await batch.update({ status: 1 }, { transaction });
+            }
+            continue;
+        }
+
+        const restoreAmount = Math.min(capacity, remaining);
+        if (restoreAmount > 0) {
+            const newAvailable = batchAvailable + restoreAmount;
+            await batch.update({ available_qty: newAvailable, status: 1 }, { transaction });
+            remaining -= restoreAmount;
+        }
+
+        if (remaining <= 0) {
+            break;
+        }
+    }
+
+    if (remaining > 0) {
+        logger.warn('Cantidad restante sin lote para restaurar', { productId, carId, remaining });
+    }
+};
+
+module.exports = {createBatch, PEPS, decreaseBatch, increaseBatch, restoreBatchStock}

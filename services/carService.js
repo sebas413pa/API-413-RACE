@@ -2,7 +2,10 @@ const { log } = require('../config/config');
 const { models } = require('../db');
 const purchase_details = require('../models/purchase_details');
 const logger = require('../utils/logger');
+const { Op } = require('sequelize');
 const Car = models.cars
+const PromotionProduct = models.promotion_products;
+const Promotion = models.promotions;
 
 async function updateCarPrice(car_id, new_price, transaction) {
     
@@ -25,9 +28,60 @@ async function updateCarPrice(car_id, new_price, transaction) {
     }
     catch(error)
     {
-        logger.error("Error al actuallizar el precio", error)
+        logger.error("Error al actualizar el precio", error)
         throw error
     }
+}
+
+async function getCarEffectivePrice(car_id, transaction, existingCar = null) {
+  const car = existingCar || await Car.findByPk(car_id, { transaction });
+
+  if (!car) {
+    logger.warn('Vehículo no encontrado', { car_id });
+    throw new Error('Vehículo no encontrado');
+  }
+
+  const basePrice = toPriceNumber(car.sale_price);
+  if (basePrice === null) {
+    logger.warn('Vehículo sin precio de venta válido', { car_id, sale_price: car.sale_price });
+    return { car, price: null, promotion: null };
+  }
+
+  const now = new Date();
+  const promotionEntries = await PromotionProduct.findAll({
+    where: {
+      car_id,
+      status: true,
+    },
+    include: [
+      {
+        model: Promotion,
+        as: 'promotion',
+        required: true,
+        where: {
+          status: true,
+          start_date: { [Op.lte]: now },
+          [Op.or]: [
+            { end_date: { [Op.gte]: now } },
+            { end_date: null },
+          ],
+        },
+      },
+    ],
+    transaction,
+  });
+
+  const bestPromotion = selectBestPromotion(basePrice, promotionEntries);
+
+  if (!bestPromotion) {
+    return { car, price: basePrice, promotion: null };
+  }
+
+  return {
+    car,
+    price: bestPromotion.price,
+    promotion: bestPromotion.promotion,
+  };
 }
 
 
@@ -93,4 +147,4 @@ const buildCarName = (lineInstance, modelValue) => {
 };
 
 
-module.exports = {updateCarPrice, normalizeNumber, buildCarName, selectBestPromotion, computePromotionPrice, toPriceNumber, normalizeBoolean, normalizeString}
+module.exports = {updateCarPrice, normalizeNumber, buildCarName, selectBestPromotion, computePromotionPrice, toPriceNumber, normalizeBoolean, normalizeString, getCarEffectivePrice}

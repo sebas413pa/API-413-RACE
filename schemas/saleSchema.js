@@ -38,6 +38,7 @@ const saleDetailSchema = Joi.object({
 
 const carSaleDetailSchema = Joi.object({
     car_id: Joi.number().integer().positive().required(),
+    sale_price: Joi.number().precision(2).optional(),
     quantity: Joi.number().integer().positive().default(1),
 });
 
@@ -60,6 +61,7 @@ const saleStatusSchema = Joi.object({
 const carSaleSchema = Joi.object({
     customer_id: Joi.number().integer().positive().required(),
     quotation_id: Joi.number().integer().positive().optional(),
+    promo_code: Joi.string().trim().min(1).max(50).optional(),
     payment: paymentSchema.required(),
     details: Joi.array().items(carSaleDetailSchema).length(1).required(),
 });

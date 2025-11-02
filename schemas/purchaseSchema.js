@@ -5,6 +5,7 @@ const purchaseDetailBaseSchema = Joi.object({
     car_id: Joi.number().integer(),
     quantity: Joi.number().integer().required(),
     unit_price: Joi.number().precision(2).required(),
+    batch_code: Joi.string().required()
     
 }).xor('product_id', 'car_id');
 
