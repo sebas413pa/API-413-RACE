@@ -16,11 +16,12 @@ const listSchema = Joi.object({
     active: Joi.string().valid("Pendiente", "Enviada", "Completada", "Cancelada")
 })
 const saleDetailSchema = Joi.object({
-    product_id: Joi.number().integer(),
-    quantity: Joi.number().integer(),
+    product_id: Joi.number().integer().required(),
+    quantity: Joi.number().integer().positive().required(),
 })
 const saleBaseSchema = Joi.object({
-    details: Joi.array().items(saleDetailSchema)
+    promo_code: Joi.string().trim().min(1).max(50).optional(),
+    details: Joi.array().items(saleDetailSchema).min(1).required()
 })
 
 module.exports = { saleDetailSchema, saleBaseSchema, listSchema}

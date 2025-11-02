@@ -209,13 +209,13 @@ const { custom } = require('joi');
             ? {
                 first_name: customerExists.first_name,
                 last_name: customerExists.last_name,
-                birthay: customerExists.birthay,
+                birtdhay: customerExists.birthday,
                 gender: customerExists.gender,
                 phone: customerExists.phone,
                 address: customerExists.address,
                 city: customerExists.city
                   ? {
-                      city_id: customerExists.ci1ty.city_id,
+                      city_id: customerExists.city.city_id,
                       city_name: customerExists.city.city_name
                     }
                   : null
