@@ -15,6 +15,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.BOOLEAN,
       allowNull: true,
       defaultValue: 1
+    },
+    image_url: {
+      type: DataTypes.STRING(255),
+      allowNull: true
     }
   }, {
     sequelize,

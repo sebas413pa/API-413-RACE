@@ -3,7 +3,7 @@
 const {models} = require('../db');
 const {sequelize} = require('../db')
 const { Op } = require('sequelize');
-const {sales: Sale, sale_details: SaleDetail, customers: Customer, products: Product, cars: Car} = models;
+const {sales: Sale, sale_details: SaleDetail, customers: Customer, products: Product, cars: Car, promo_codes: PromoCode, promo_code_uses: PromoCodeUse} = models;
 const ApiResponse = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const {saleBaseSchema, listSchema} = require('../schemas/saleSchema');
@@ -76,31 +76,31 @@ const listSales = async(req, res) =>{
 
 const createdSale = async(req, res) => {
     const response = new ApiResponse()
-    const {error, value} = saleBaseSchema.validate(req.body);
+    const {error, value} = saleBaseSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
     const user = req.user;
     if(error)
     {
         logger.error("Datos invalidos", error);
         return res.status(400).json(response.errorResponse("Datos invalidos", error));
     }
+    const { details, promo_code: promoCodeInput } = value;
     const transaction = await sequelize.transaction();
     try
     {
-        let customer;
-        let customer_id;
-        console.log("Usuario", user);
+        let customer_id = null;
         if(user)
         {
-            customer = await Customer.findOne({
+            const customer = await Customer.findOne({
                 where: {
                     user_id: user.user_id
                 }, transaction
-            })
-            customer_id = customer.customer_id;
-        }
-        else
-        {
-            customer_id = null
+            });
+
+            if (customer) {
+                customer_id = customer.customer_id;
+            } else {
+                logger.warn("Usuario autenticado sin registro de cliente", { user_id: user.user_id });
+            }
         }
         const createdSale = await Sale.create({
             customer_id: customer_id,
@@ -109,8 +109,7 @@ const createdSale = async(req, res) => {
             status: 'Pendiente'
         }, {transaction})
         let total = 0;
-        let subtotal = 0;
-        for (const detail of value.details)
+        for (const detail of details)
         {
             const { product, price: effectivePrice } = await getProductEffectivePrice(detail.product_id, transaction);
             if (effectivePrice === null) {
@@ -122,7 +121,7 @@ const createdSale = async(req, res) => {
             }
             if(product.stock >= detail.quantity)
             {
-                subtotal = detail.quantity * effectivePrice;
+                const subtotal = detail.quantity * effectivePrice;
                 total += subtotal;
                 await SaleDetail.create({
                     sale_id: createdSale.sale_id,
@@ -136,7 +135,6 @@ const createdSale = async(req, res) => {
                     stock: newStock
                 }, {transaction})
                 const batch = await PEPS(null, product.product_id, transaction);
-                console.log(batch)
                 await decreaseBatch(batch.batch_id, detail.quantity, transaction)
             }
             else
@@ -149,8 +147,120 @@ const createdSale = async(req, res) => {
             }
         }
 
+        const totalBeforeDiscount = total;
+        let finalTotal = totalBeforeDiscount;
+        let discountAmount = 0;
+
+        if (promoCodeInput) {
+            const promoCode = await PromoCode.findOne({
+                where: { promo_code: promoCodeInput },
+                transaction,
+            });
+
+            if (!promoCode) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Código promocional no encontrado", { promo_code: promoCodeInput });
+                return res.status(404).json(response.errorResponse("Código promocional no encontrado"));
+            }
+
+            if (!promoCode.status) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Código promocional inactivo", { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse("Código promocional inactivo"));
+            }
+
+            const now = new Date();
+            const startDate = promoCode.start_date ? new Date(promoCode.start_date) : null;
+            const endDate = promoCode.end_date ? new Date(promoCode.end_date) : null;
+
+            if (startDate && now < startDate) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Código promocional aún no disponible", { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse("El código promocional aún no está disponible"));
+            }
+
+            if (endDate && now > endDate) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Código promocional expirado", { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse("El código promocional ha expirado"));
+            }
+
+            if (!customer_id) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Intento de usar código sin cliente asociado", { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse("Debe autenticarse como cliente para usar este código"));
+            }
+
+            if (promoCode.customer_id && promoCode.customer_id !== customer_id) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Código promocional no pertenece al cliente", { promo_code_id: promoCode.promo_code_id, customer_id });
+                return res.status(403).json(response.errorResponse("Este código promocional no está asignado a este cliente"));
+            }
+
+            const alreadyUsed = await PromoCodeUse.findOne({
+                where: {
+                    promo_code_id: promoCode.promo_code_id,
+                    status: true,
+                },
+                transaction,
+            });
+
+            if (alreadyUsed) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Código promocional ya utilizado", { promo_code_id: promoCode.promo_code_id });
+                return res.status(409).json(response.errorResponse("El código promocional ya fue utilizado"));
+            }
+
+            const minPurchase = promoCode.min_purchase_amount ? parseFloat(promoCode.min_purchase_amount) : 0;
+            if (minPurchase && totalBeforeDiscount < minPurchase) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn("Total insuficiente para código promocional", { promo_code_id: promoCode.promo_code_id, totalBeforeDiscount, minPurchase });
+                return res.status(409).json(response.errorResponse("El total de la compra no cumple con el mínimo requerido para el código"));
+            }
+
+            if (promoCode.discount_type === 'percentage') {
+                discountAmount = (totalBeforeDiscount * parseFloat(promoCode.discount_value)) / 100;
+            } else {
+                discountAmount = parseFloat(promoCode.discount_value);
+            }
+
+            const maxDiscount = promoCode.max_discount_amount != null ? parseFloat(promoCode.max_discount_amount) : null;
+            if (maxDiscount !== null) {
+                discountAmount = Math.min(discountAmount, maxDiscount);
+            }
+
+            discountAmount = Math.min(discountAmount, totalBeforeDiscount);
+            discountAmount = Number(discountAmount.toFixed(2));
+            finalTotal = Number((totalBeforeDiscount - discountAmount).toFixed(2));
+            finalTotal = Math.max(finalTotal, 0);
+
+            await PromoCodeUse.create({
+                promo_code_id: promoCode.promo_code_id,
+                customer_id,
+                sale_id: createdSale.sale_id,
+                discount_amount: discountAmount,
+                status: true,
+            }, { transaction });
+        }
+
         await createdSale.update({
-            total
+            total: finalTotal
         }, {transaction})
 
         await transaction.commit();
@@ -167,6 +277,23 @@ const createdSale = async(req, res) => {
                             model: models.products,
                             as: 'product',
                             attributes: ['product_id', 'name']
+                        }
+                    ]
+                },
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['customer_id', 'first_name', 'last_name']
+                },
+                {
+                    model: models.promo_code_uses,
+                    as: 'promo_code_uses',
+                    attributes: ['use_id', 'discount_amount', 'status'],
+                    include: [
+                        {
+                            model: models.promo_codes,
+                            as: 'promo_code',
+                            attributes: ['promo_code_id', 'promo_code']
                         }
                     ]
                 }

@@ -15,6 +15,7 @@ const carRoutes = require('./carRoutes');
 const categoryProductRoutes = require('./categoryProductRoutes');
 const productRoutes = require('./productRoutes');
 const promotionRoutes = require('./promotionRoutes');
+const promoCodeRoutes = require('./promoCodeRoutes');
 const purchaseRoutes = require('./purchaseRoutes')
 const saleRoutes = require('./saleRoutes')
 const { authenticateJWT } = require('../middlewares/authMiddleware');
@@ -34,6 +35,7 @@ router.use('/cars', carRoutes);
 router.use('/category-products', authenticateJWT, checkRole(['Administrador','Empleado']), categoryProductRoutes);
 router.use('/products', productRoutes);
 router.use('/promotions', authenticateJWT, checkRole(['Administrador','Empleado']), promotionRoutes);
+router.use('/promo-codes', authenticateJWT, checkRole(['Administrador','Empleado']), promoCodeRoutes);
 router.use('/purchases', authenticateJWT, checkRole(['Administrador','Empleado']), purchaseRoutes)
 router.use('/sales', saleRoutes)
 router.get('/', (req, res) => {

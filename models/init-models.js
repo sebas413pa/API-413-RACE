@@ -62,6 +62,8 @@ function initModels(sequelize) {
   car_categories.hasMany(car_lines, { as: "car_lines", foreignKey: "category_id"});
   cars.belongsTo(car_lines, { as: "line", foreignKey: "line_id"});
   car_lines.hasMany(cars, { as: "cars", foreignKey: "line_id"});
+  batches.belongsTo(cars, { as: "car", foreignKey: "car_id"});
+  cars.hasMany(batches, { as: "batches", foreignKey: "car_id"});
   car_images.belongsTo(cars, { as: "car", foreignKey: "car_id"});
   cars.hasMany(car_images, { as: "car_images", foreignKey: "car_id"});
   promotion_products.belongsTo(cars, { as: "car", foreignKey: "car_id"});
@@ -98,8 +100,6 @@ function initModels(sequelize) {
   products.hasMany(sale_details, { as: "sale_details", foreignKey: "product_id"});
   promo_code_uses.belongsTo(promo_codes, { as: "promo_code", foreignKey: "promo_code_id"});
   promo_codes.hasMany(promo_code_uses, { as: "promo_code_uses", foreignKey: "promo_code_id"});
-  promo_codes.belongsTo(promotions, { as: "promotion", foreignKey: "promotion_id"});
-  promotions.hasMany(promo_codes, { as: "promo_codes", foreignKey: "promotion_id"});
   promotion_products.belongsTo(promotions, { as: "promotion", foreignKey: "promotion_id"});
   promotions.hasMany(promotion_products, { as: "promotion_products", foreignKey: "promotion_id"});
   batches.belongsTo(purchases, { as: "purchase", foreignKey: "purchase_id"});

@@ -12,14 +12,6 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       unique: "promo_code"
     },
-    promotion_id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      references: {
-        model: 'promotions',
-        key: 'promotion_id'
-      }
-    },
     customer_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -78,13 +70,6 @@ module.exports = function(sequelize, DataTypes) {
         using: "BTREE",
         fields: [
           { name: "promo_code" },
-        ]
-      },
-      {
-        name: "promotion_id",
-        using: "BTREE",
-        fields: [
-          { name: "promotion_id" },
         ]
       },
       {
