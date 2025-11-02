@@ -14,8 +14,9 @@ const createCarSchema = Joi.object({
   type_car: Joi.string().valid('Electrico','Gasolina','Hibrido').optional(),
   transmission: Joi.string().valid('Manual','Automatica').optional(),
   model: Joi.number().integer().required(),
-  price: Joi.number().precision(2).required(),
+  purchase_price: Joi.number().precision(2).required(),
   stock: Joi.number().integer().optional(),
+  profit_margin: Joi.number().precision(2).required()
 });
 
 const updateCarSchema = Joi.object({
@@ -25,9 +26,9 @@ const updateCarSchema = Joi.object({
   type_car: Joi.string().valid('Electrico','Gasolina','Hibrido').optional(),
   transmission: Joi.string().valid('Manual','Automatica').optional(),
   model: Joi.number().integer().optional(),
-  price: Joi.number().precision(2).optional(),
   stock: Joi.number().integer().optional(),
   status: Joi.boolean().optional(),
+  profit_margin: Joi.number().precision(2).optional()
 });
 
 const carIdParamSchema = Joi.number().integer().required();
