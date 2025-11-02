@@ -26,6 +26,11 @@ const listCustomers = async (req, res) => {
           include: [{ model: Role, as: 'role', attributes: ['role_id','role_name'] }]
         },
       ],
+        include: [
+        { 
+          model: City, as: 'city', attributes: ['city_id', 'city_name'],
+        },
+      ],
     });
     return res.status(200).json(response.successResponse('Clientes obtenidos exitosamente', customers));
   } catch (error) {
@@ -148,6 +153,21 @@ const updateCustomer = async (req, res) => {
   try {
     const customer = await Customer.findByPk(customer_id);
     if (!customer) return res.status(404).json(response.errorResponse('Cliente no encontrado'));
+
+    const user = await User.findByPk(customer.user_id);
+    if (!user) return res.status(404).json(response.errorResponse('Usuario asociado no encontrado'));
+
+    if (value.email && value.email !== user.email) {
+      const emailExists = await User.findOne({ where: { email: value.email } });
+
+      if (emailExists && emailExists.user_id !== user.user_id) {
+        return res.status(400).json(response.errorResponse('El email ya está en uso por otro usuario'));
+      }
+
+      await user.update({ email: value.email });
+    }
+
+    delete value.email;
 
     const updated = await customer.update(value);
     return res.status(200).json(response.successResponse(updated, 'Cliente actualizado exitosamente'));

@@ -38,6 +38,7 @@ const updateCustomerSchema = Joi.object({
   gender: Joi.string().valid('Masculino', 'Femenino', 'Otro'),
   phone: Joi.string().min(8).required(),
   address: Joi.string().min(1).required(),
+  email: Joi.string().email().max(100).required(),
   city_id: Joi.number().integer()
 });
 
