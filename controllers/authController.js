@@ -207,6 +207,7 @@ const { custom } = require('joi');
       },
        customer: customerExists
             ? {
+                customer_id: customerExists.customer_id,
                 first_name: customerExists.first_name,
                 last_name: customerExists.last_name,
                 birtdhay: customerExists.birthday,
