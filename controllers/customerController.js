@@ -26,6 +26,11 @@ const listCustomers = async (req, res) => {
           include: [{ model: Role, as: 'role', attributes: ['role_id','role_name'] }]
         },
       ],
+        include: [
+        { 
+          model: City, as: 'city', attributes: ['city_id', 'city_name'],
+        },
+      ],
     });
     return res.status(200).json(response.successResponse('Clientes obtenidos exitosamente', customers));
   } catch (error) {
