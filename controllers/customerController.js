@@ -2,7 +2,6 @@
 const { sequelize, models } = require('../db');
 const { customers: Customer, users: User, roles: Role, promo_codes: PromoCode, cities:City } = models;
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const {listCustomersSchema,

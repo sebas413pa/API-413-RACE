@@ -1,6 +1,11 @@
 const WELCOME_PROMO_PREFIX = 'CLIENTE-NUEVO';
 const WELCOME_PROMO_DISCOUNT = 15;
 const WELCOME_PROMO_VALIDITY_DAYS = 30;
+const bcrypt = require('bcryptjs');
+const logger = require('../utils/logger');
+const crypto = require('crypto');
+const { sequelize, models } = require('../db');
+const { customers: Customer, users: User, roles: Role, promo_codes: PromoCode, cities:City } = models;
 
 const createWelcomePromoCode = async (customerId, transaction) => {
   const now = new Date();
