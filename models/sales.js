@@ -26,17 +26,7 @@ module.exports = function(sequelize, DataTypes) {
     sale_date: {
       type: DataTypes.DATE,
       allowNull: true,
-      defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP')
-    },
-    subtotal: {
-      type: DataTypes.DECIMAL(10,2),
-      allowNull: true,
-      defaultValue: 0.00
-    },
-    discount: {
-      type: DataTypes.DECIMAL(10,2),
-      allowNull: true,
-      defaultValue: 0.00
+      defaultValue: Sequelize.Sequelize.fn('current_timestamp')
     },
     total: {
       type: DataTypes.DECIMAL(10,2),
