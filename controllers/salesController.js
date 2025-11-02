@@ -395,11 +395,11 @@ const createdSale = async(req, res) => {
                 await transaction.rollback();
             }
             logger.warn('Monto de pago no coincide con el total calculado', { paymentAmount: paymentAmountRounded, total });
-            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta'));
+            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta',{ paymentAmount: paymentAmountRounded, total } ));
         }
 
         const paymentStatus = 'Aprobado';
-        const transactionId = (payment.transaction_id && payment.transaction_id.trim()) ? payment.transaction_id.trim() : randomUUID();
+        const transactionId = randomUUID();
 
         const paymentPayload = {
             sale_id: createdSale.sale_id,
@@ -589,7 +589,7 @@ const createCarSale = async(req, res) => {
             payment_method: payment.payment_method,
             amount: paymentAmountRounded,
             status: 'Aprobado',
-            transaction_id: (payment.transaction_id && payment.transaction_id.trim()) ? payment.transaction_id.trim() : randomUUID(),
+            transaction_id: randomUUID(),
             notes: payment.notes ? payment.notes : null,
         };
 
