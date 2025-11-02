@@ -4,10 +4,10 @@ const { randomUUID } = require('crypto');
 const {models} = require('../db');
 const {sequelize} = require('../db')
 const { Op } = require('sequelize');
-const {sales: Sale, sale_details: SaleDetail, customers: Customer, products: Product, cars: Car, promo_codes: PromoCode, promo_code_uses: PromoCodeUse, payments: Payment, batches: Batch} = models;
+const {sales: Sale, sale_details: SaleDetail, customers: Customer, products: Product, cars: Car, promo_codes: PromoCode, promo_code_uses: PromoCodeUse, payments: Payment, batches: Batch, quotations: Quotation} = models;
 const ApiResponse = require('../utils/apiResponse');
 const logger = require('../utils/logger');
-const {saleBaseSchema, listSchema, saleStatusSchema, SALE_STATUS_VALUES} = require('../schemas/saleSchema');
+const {saleBaseSchema, listSchema, saleStatusSchema, SALE_STATUS_VALUES, carSaleSchema} = require('../schemas/saleSchema');
 const { PEPS, decreaseBatch } = require('../services/batchService')
 const { getProductEffectivePrice } = require('../services/productService');
 
@@ -433,6 +433,192 @@ const createdSale = async(req, res) => {
     }
 }
 
+const createCarSale = async(req, res) => {
+    const response = new ApiResponse();
+    const { error, value } = carSaleSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+
+    if (error) {
+        logger.warn('Datos inválidos al crear venta de vehículo', error);
+        return res.status(400).json(response.errorResponse('Datos inválidos', error));
+    }
+
+    const { customer_id: customerId, quotation_id: quotationId, payment, details } = value;
+    const vehicleDetail = details[0];
+    const quantity = Number(vehicleDetail.quantity || 1);
+
+    const transaction = await sequelize.transaction();
+
+    try {
+        const customer = await Customer.findOne({
+            where: { customer_id: customerId },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!customer) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Cliente no encontrado al crear venta de vehículo', { customerId });
+            return res.status(404).json(response.errorResponse('Cliente no encontrado'));
+        }
+
+    if (customer.status === false || customer.status === 0) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Cliente inactivo al crear venta de vehículo', { customerId });
+            return res.status(409).json(response.errorResponse('El cliente se encuentra inactivo'));
+        }
+
+        let linkedQuotation = null;
+        if (quotationId) {
+            linkedQuotation = await Quotation.findOne({
+                where: { quotation_id: quotationId },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (!linkedQuotation) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Cotización no encontrada para venta de vehículo', { quotationId });
+                return res.status(404).json(response.errorResponse('Cotización no encontrada'));
+            }
+
+            if (linkedQuotation.customer_id !== customerId) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Cotización no pertenece al cliente indicado', { quotationId, customerId });
+                return res.status(409).json(response.errorResponse('La cotización seleccionada no pertenece al cliente')); 
+            }
+        }
+
+        const car = await Car.findOne({
+            where: { car_id: vehicleDetail.car_id },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!car) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Vehículo no encontrado al crear venta', { car_id: vehicleDetail.car_id });
+            return res.status(404).json(response.errorResponse('Vehículo no encontrado'));
+        }
+
+    if (car.status === false || car.status === 0) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Vehículo inactivo al crear venta', { car_id: car.car_id });
+            return res.status(409).json(response.errorResponse('El vehículo no está disponible para la venta'));
+        }
+
+        if (car.stock < quantity) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Stock insuficiente para vehículo', { car_id: car.car_id, requested: quantity, stock: car.stock });
+            return res.status(400).json(response.errorResponse('No hay stock suficiente del vehículo solicitado'));
+        }
+
+        if (linkedQuotation && linkedQuotation.car_id !== car.car_id) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Cotización no corresponde al vehículo vendido', { quotationId, car_id: car.car_id });
+            return res.status(409).json(response.errorResponse('La cotización no corresponde al vehículo seleccionado'));
+        }
+
+        const unitPrice = Number(car.sale_price);
+        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Vehículo sin precio de venta válido', { car_id: car.car_id, sale_price: car.sale_price });
+            return res.status(400).json(response.errorResponse('Vehículo sin precio de venta válido'));
+        }
+
+        const lineSubtotal = Number((unitPrice * quantity).toFixed(2));
+
+        const createdSale = await Sale.create({
+            customer_id: customerId,
+            quotation_id: quotationId || null,
+            sale_date: new Date(),
+            sale_type: 'Vehiculo',
+            status: 'Pendiente',
+            subtotal: 0,
+            discount: 0,
+            total: 0
+        }, { transaction });
+
+        await SaleDetail.create({
+            sale_id: createdSale.sale_id,
+            car_id: car.car_id,
+            quantity,
+            unit_price: unitPrice,
+            subtotal: lineSubtotal
+        }, { transaction });
+
+        const newStock = Number(car.stock) - quantity;
+        await car.update({ stock: newStock }, { transaction });
+
+        if (quantity > 0) {
+            const batch = await PEPS(car.car_id, null, transaction);
+            await decreaseBatch(batch.batch_id, quantity, transaction);
+        }
+
+        const subtotalRounded = Number(lineSubtotal.toFixed(2));
+        const total = subtotalRounded;
+        const paymentAmountRounded = Number(Number(payment.amount).toFixed(2));
+
+        if (Math.abs(paymentAmountRounded - total) > 0.01) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Monto de pago no coincide con el total de la venta de vehículo', { paymentAmount: paymentAmountRounded, total });
+            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta'));
+        }
+
+        const paymentPayload = {
+            sale_id: createdSale.sale_id,
+            payment_method: payment.payment_method,
+            amount: paymentAmountRounded,
+            status: 'Aprobado',
+            transaction_id: (payment.transaction_id && payment.transaction_id.trim()) ? payment.transaction_id.trim() : randomUUID(),
+            notes: payment.notes ? payment.notes : null,
+        };
+
+        await createdSale.update({
+            subtotal: subtotalRounded,
+            discount: 0,
+            total
+        }, { transaction });
+
+        await Payment.create(paymentPayload, { transaction });
+
+        if (linkedQuotation && linkedQuotation.status !== 'Completada') {
+            await linkedQuotation.update({ status: 'Completada' }, { transaction });
+        }
+
+        await transaction.commit();
+
+        const finalSale = await fetchSaleWithRelations(createdSale.sale_id);
+        logger.info('Venta de vehículo creada exitosamente', { sale_id: createdSale.sale_id });
+        return res.status(201).json(response.successResponse(finalSale, 'Venta de vehículo creada exitosamente'));
+    } catch (err) {
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
+        logger.error('Error al crear venta de vehículo', err);
+        return res.status(500).json(response.errorResponse('Error al crear la venta de vehículo', err));
+    }
+};
+
 const cancelSale = async(req, res) => {
     const response = new ApiResponse();
     const saleId = Number(req.params.saleId);
@@ -623,4 +809,4 @@ const updateSaleStatus = async(req, res) => {
 };
 
 
-module.exports = {listSales, createdSale, cancelSale, updateSaleStatus}
+module.exports = {listSales, createdSale, createCarSale, cancelSale, updateSaleStatus}

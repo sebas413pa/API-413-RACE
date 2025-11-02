@@ -32,8 +32,13 @@ const SALE_STATUS_VALUES = [
 ];
 
 const saleDetailSchema = Joi.object({
-    product_id: Joi.number().integer().required(),
+    product_id: Joi.number().integer().positive().required(),
     quantity: Joi.number().integer().positive().required(),
+});
+
+const carSaleDetailSchema = Joi.object({
+    car_id: Joi.number().integer().positive().required(),
+    quantity: Joi.number().integer().positive().default(1),
 });
 
 const paymentSchema = Joi.object({
@@ -53,4 +58,11 @@ const saleStatusSchema = Joi.object({
     status: Joi.string().valid(...SALE_STATUS_VALUES).required(),
 });
 
-module.exports = { saleDetailSchema, saleBaseSchema, listSchema, saleStatusSchema, SALE_STATUS_VALUES }
+const carSaleSchema = Joi.object({
+    customer_id: Joi.number().integer().positive().required(),
+    quotation_id: Joi.number().integer().positive().optional(),
+    payment: paymentSchema.required(),
+    details: Joi.array().items(carSaleDetailSchema).length(1).required(),
+});
+
+module.exports = { saleDetailSchema, saleBaseSchema, listSchema, saleStatusSchema, SALE_STATUS_VALUES, carSaleSchema }
