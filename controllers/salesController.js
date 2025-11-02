@@ -8,6 +8,7 @@ const ApiResponse = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const {saleBaseSchema, listSchema} = require('../schemas/saleSchema');
 const {createBatch, PEPS, decreaseBatch, increaseBatch} = require('../services/batchService')
+const { getProductEffectivePrice } = require('../services/productService');
 
 const listSales = async(req, res) =>{
     const response = new ApiResponse();
@@ -76,7 +77,7 @@ const listSales = async(req, res) =>{
 const createdSale = async(req, res) => {
     const response = new ApiResponse()
     const {error, value} = saleBaseSchema.validate(req.body);
-    const user = req.user
+    const user = req.user;
     if(error)
     {
         logger.error("Datos invalidos", error);
@@ -85,31 +86,49 @@ const createdSale = async(req, res) => {
     const transaction = await sequelize.transaction();
     try
     {
-        const customer = await Customer.findOne({
-            where: {
-                user_id: user.user_id
-            }, transaction
-        })
+        let customer;
+        let customer_id;
+        console.log("Usuario", user);
+        if(user)
+        {
+            customer = await Customer.findOne({
+                where: {
+                    user_id: user.user_id
+                }, transaction
+            })
+            customer_id = customer.customer_id;
+        }
+        else
+        {
+            customer_id = null
+        }
         const createdSale = await Sale.create({
-            customer_id: customer.customer_id,
+            customer_id: customer_id,
             sale_date: Date.now(),
             sale_type: 'Producto',
             status: 'Pendiente'
         }, {transaction})
         let total = 0;
         let subtotal = 0;
-        for(const detail of value.details)
+        for (const detail of value.details)
         {
-            const product = await Product.findByPk(detail.product_id, {transaction})
+            const { product, price: effectivePrice } = await getProductEffectivePrice(detail.product_id, transaction);
+            if (effectivePrice === null) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Producto sin precio de venta válido', { product_id: detail.product_id });
+                return res.status(400).json(response.errorResponse('Producto sin precio de venta válido'));
+            }
             if(product.stock >= detail.quantity)
             {
-                subtotal = detail.quantity * product.sale_price;
+                subtotal = detail.quantity * effectivePrice;
                 total += subtotal;
                 await SaleDetail.create({
                     sale_id: createdSale.sale_id,
                     product_id: detail.product_id,
                     quantity: detail.quantity,
-                    unit_price: product.sale_price,
+                    unit_price: effectivePrice,
                     subtotal: subtotal
                 }, {transaction})
                 const newStock = product.stock - detail.quantity
@@ -122,7 +141,9 @@ const createdSale = async(req, res) => {
             }
             else
             {
-                await transaction.rollback()
+                if (!transaction.finished) {
+                    await transaction.rollback()
+                }
                 logger.warn("No hay stock suficiente")
                 return res.status(400).json(response.errorResponse("No hay stock suficiente"))
             }
@@ -133,7 +154,7 @@ const createdSale = async(req, res) => {
         }, {transaction})
 
         await transaction.commit();
-        const Sale = await Sale.findOne({
+        const finalSale = await Sale.findOne({
             where:{
                 sale_id: createdSale.sale_id
             },
@@ -149,15 +170,16 @@ const createdSale = async(req, res) => {
                         }
                     ]
                 }
-            ],
-            transaction
+            ]
         })
-        logger.info("Se hizo la venta", Sale)
-        res.status(201).json(response.successResponse(Sale, "Venta hecha correctamente"))
+        logger.info("Se hizo la venta", finalSale)
+        res.status(201).json(response.successResponse(finalSale, "Venta hecha correctamente"))
     }
     catch(error)
     {
-        await transaction.rollback();
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
         logger.error("Hubo un error al hacer la venta", error)
         res.status(500).json(response.errorResponse("Hubo un error al hacer la venta", error))
     }
