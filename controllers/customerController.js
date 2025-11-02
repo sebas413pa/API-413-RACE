@@ -1,6 +1,6 @@
 'use strict';
 const { models } = require('../db');
-const { customers: Customer, users: User, roles: Role } = models;
+const { customers: Customer, users: User, roles: Role, cities:City } = models;
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
