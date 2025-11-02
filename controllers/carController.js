@@ -61,8 +61,9 @@ const createCar = async (req, res) => {
     type_car: normalizeString(req.body.type_car),
     transmission: normalizeString(req.body.transmission),
     model: normalizeNumber(req.body.model),
-    price: normalizeNumber(req.body.price),
     stock: normalizeNumber(req.body.stock),
+    profit_margin: normalizeNumber(req.body.profit_margin),
+    purchase_price: normalizeNumber(req.body.purchase_price)
   };
 
   const { error, value } = createCarSchema.validate(payload);
@@ -93,9 +94,10 @@ const createCar = async (req, res) => {
       return res.status(404).json(response.errorResponse("line_id no encontrado"));
     }
 
-    const carPayload = { ...value, car_name: buildCarName(line, value.model) };
-
+    const salePrice = value.purchase_price * value.profit_margin/100 + value.purchase_price;
+    const carPayload = { ...value, car_name: buildCarName(line, value.model), sale_price: salePrice };
     const car = await Car.create(carPayload, { transaction: t });
+    await updateCarPrice(car.car_id, car.purchase_price, t);
     logger.debug('createCar - car created', { car_id: car.car_id, car_name: car.car_name });
 
     if (files.length) {

@@ -194,8 +194,8 @@ const createProduct = async (req, res) => {
       cleanupUploads();
       return res.status(404).json(response.errorResponse('Categoría no encontrada'));
     }
-
-    const item = await Product.create(value);
+    const salePrice = value.purchase_price * value.profit_margin/100 + value.purchase_price;
+    const item = await Product.create({...value, sale_price: salePrice});
     const data = item.toJSON();
     data.image_url = ensureAbsoluteUrl(data.image_url);
     const unusedFiles = uploadedFiles.filter((file) => file !== uploadFile);
