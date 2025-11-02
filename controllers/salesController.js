@@ -1,14 +1,128 @@
 'use strict';
 
+const { randomUUID } = require('crypto');
 const {models} = require('../db');
 const {sequelize} = require('../db')
 const { Op } = require('sequelize');
-const {sales: Sale, sale_details: SaleDetail, customers: Customer, products: Product, cars: Car, promo_codes: PromoCode, promo_code_uses: PromoCodeUse} = models;
+const {sales: Sale, sale_details: SaleDetail, customers: Customer, products: Product, cars: Car, promo_codes: PromoCode, promo_code_uses: PromoCodeUse, payments: Payment, batches: Batch} = models;
 const ApiResponse = require('../utils/apiResponse');
 const logger = require('../utils/logger');
-const {saleBaseSchema, listSchema} = require('../schemas/saleSchema');
-const {createBatch, PEPS, decreaseBatch, increaseBatch} = require('../services/batchService')
+const {saleBaseSchema, listSchema, saleStatusSchema, SALE_STATUS_VALUES} = require('../schemas/saleSchema');
+const { PEPS, decreaseBatch } = require('../services/batchService')
 const { getProductEffectivePrice } = require('../services/productService');
+
+const buildSaleIncludes = () => ([
+    {
+        model: SaleDetail,
+        as: 'sale_details',
+        include: [
+            {
+                model: Product,
+                as: 'product',
+                attributes: ['product_id', 'name']
+            },
+            {
+                model: Car,
+                as: 'car',
+                attributes: ['car_id', 'car_name']
+            }
+        ]
+    },
+    {
+        model: Customer,
+        as: 'customer',
+        attributes: ['customer_id', 'first_name', 'last_name']
+    },
+    {
+        model: PromoCodeUse,
+        as: 'promo_code_uses',
+        attributes: ['use_id', 'discount_amount', 'status'],
+        include: [
+            {
+                model: PromoCode,
+                as: 'promo_code',
+                attributes: ['promo_code_id', 'promo_code']
+            }
+        ]
+    },
+    {
+        model: Payment,
+        as: 'payments',
+        attributes: ['payment_id', 'payment_method', 'amount', 'status', 'payment_date', 'transaction_id', 'notes']
+    }
+]);
+
+const fetchSaleWithRelations = async(saleId, options = {}) => {
+    const { transaction, lock } = options;
+    const query = {
+        where: { sale_id: saleId },
+        include: buildSaleIncludes()
+    };
+
+    if (transaction) {
+        query.transaction = transaction;
+    }
+
+    if (lock) {
+        query.lock = lock;
+    }
+
+    return Sale.findOne(query);
+};
+
+const restoreBatchStock = async({ productId, carId, quantity, transaction }) => {
+    if (!quantity || (!productId && !carId)) {
+        return;
+    }
+
+    const where = productId ? { product_id: productId } : { car_id: carId };
+    const batchQuery = {
+        where,
+        order: [['received_at', 'ASC'], ['batch_id', 'ASC']],
+        transaction
+    };
+
+    if (transaction) {
+        batchQuery.lock = transaction.LOCK.UPDATE;
+    }
+
+    const batches = await Batch.findAll(batchQuery);
+
+    if (!batches.length) {
+        logger.warn('No se encontraron lotes para restaurar inventario', { productId, carId });
+        return;
+    }
+
+    let remaining = Number(quantity);
+
+    for (const batch of batches) {
+        const batchQuantity = Number(batch.quantity) || 0;
+        const batchAvailable = Number(batch.available_qty) || 0;
+        const capacity = batchQuantity - batchAvailable;
+
+        if (capacity <= 0) {
+            if (batchAvailable > 0 && batch.status === 0) {
+                await batch.update({ status: 1 }, { transaction });
+            }
+            continue;
+        }
+
+        const restoreAmount = Math.min(capacity, remaining);
+        if (restoreAmount > 0) {
+            const newAvailable = batchAvailable + restoreAmount;
+            await batch.update({ available_qty: newAvailable, status: 1 }, { transaction });
+            remaining -= restoreAmount;
+        }
+
+        if (remaining <= 0) {
+            break;
+        }
+    }
+
+    if (remaining > 0) {
+        logger.warn('Cantidad restante sin lote para restaurar', { productId, carId, remaining });
+    }
+};
 
 const listSales = async(req, res) =>{
     const response = new ApiResponse();
@@ -42,15 +156,8 @@ const listSales = async(req, res) =>{
     if (typeof car_id !== 'undefined') applyIdFilter(detailWhere, 'car_id', car_id);
     if (typeof product_id !== 'undefined') applyIdFilter(detailWhere, 'product_id', product_id);
 
-    const includeSaleDetails = {
-        model: SaleDetail,
-        as: 'sale_details',
-        include: [
-            { model: Product, as: 'product', attributes: ['product_id', 'name'] },
-            { model: Car, as: 'car', attributes: ['car_id', 'car_name'] },
-        ],
-    };
-
+    const saleIncludes = buildSaleIncludes();
+    const [includeSaleDetails, ...otherIncludes] = saleIncludes;
     if (Object.keys(detailWhere).length) {
         includeSaleDetails.where = detailWhere;
         includeSaleDetails.required = true;
@@ -61,9 +168,9 @@ const listSales = async(req, res) =>{
             where: saleWhere,
             include: [
                 includeSaleDetails,
-                { model: Customer, as: 'customer', attributes: ['customer_id', 'first_name', 'last_name'] },
+                ...otherIncludes
             ],
-            order: [['sale_id', 'DESC']],
+            order: [['sale_id', 'DESC']]
         });
 
         logger.info('Ventas listadas exitosamente');
@@ -72,7 +179,7 @@ const listSales = async(req, res) =>{
         logger.error('Error al listar ventas', err);
         return res.status(500).json(response.errorResponse('Error al listar ventas', err));
     }
-}
+};
 
 const createdSale = async(req, res) => {
     const response = new ApiResponse()
@@ -83,7 +190,7 @@ const createdSale = async(req, res) => {
         logger.error("Datos invalidos", error);
         return res.status(400).json(response.errorResponse("Datos invalidos", error));
     }
-    const { details, promo_code: promoCodeInput } = value;
+    const { details, promo_code: promoCodeInput, payment } = value;
     const transaction = await sequelize.transaction();
     try
     {
@@ -280,6 +387,28 @@ const createdSale = async(req, res) => {
         }
 
         const discountCombined = Number((lineDiscountRounded + promoDiscount).toFixed(2));
+        const paymentAmount = Number(payment.amount);
+        const paymentAmountRounded = Number(paymentAmount.toFixed(2));
+
+        if (Math.abs(paymentAmountRounded - total) > 0.01) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Monto de pago no coincide con el total calculado', { paymentAmount: paymentAmountRounded, total });
+            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta'));
+        }
+
+        const paymentStatus = 'Aprobado';
+        const transactionId = (payment.transaction_id && payment.transaction_id.trim()) ? payment.transaction_id.trim() : randomUUID();
+
+        const paymentPayload = {
+            sale_id: createdSale.sale_id,
+            payment_method: payment.payment_method,
+            amount: paymentAmountRounded,
+            status: paymentStatus,
+            transaction_id: transactionId,
+            notes: payment.notes ? payment.notes : null,
+        };
 
         await createdSale.update({
             subtotal: subtotalRounded,
@@ -287,42 +416,10 @@ const createdSale = async(req, res) => {
             total
         }, {transaction})
 
+        await Payment.create(paymentPayload, { transaction });
+
         await transaction.commit();
-        const finalSale = await Sale.findOne({
-            where:{
-                sale_id: createdSale.sale_id
-            },
-            include: [
-                {
-                    model: models.sale_details,
-                    as: 'sale_details',
-                    include: [
-                        {
-                            model: models.products,
-                            as: 'product',
-                            attributes: ['product_id', 'name']
-                        }
-                    ]
-                },
-                {
-                    model: Customer,
-                    as: 'customer',
-                    attributes: ['customer_id', 'first_name', 'last_name']
-                },
-                {
-                    model: models.promo_code_uses,
-                    as: 'promo_code_uses',
-                    attributes: ['use_id', 'discount_amount', 'status'],
-                    include: [
-                        {
-                            model: models.promo_codes,
-                            as: 'promo_code',
-                            attributes: ['promo_code_id', 'promo_code']
-                        }
-                    ]
-                }
-            ]
-        })
+        const finalSale = await fetchSaleWithRelations(createdSale.sale_id);
         logger.info("Se hizo la venta", finalSale)
         res.status(201).json(response.successResponse(finalSale, "Venta hecha correctamente"))
     }
@@ -336,4 +433,194 @@ const createdSale = async(req, res) => {
     }
 }
 
-module.exports = {listSales, createdSale}
+const cancelSale = async(req, res) => {
+    const response = new ApiResponse();
+    const saleId = Number(req.params.saleId);
+
+    if (!Number.isInteger(saleId)) {
+        logger.warn('Identificador de venta inválido al cancelar', { saleId: req.params.saleId });
+        return res.status(400).json(response.errorResponse('Identificador de venta inválido'));
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+    const sale = await fetchSaleWithRelations(saleId, { transaction, lock: transaction.LOCK.UPDATE });
+
+        if (!sale) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Venta no encontrada al cancelar', { saleId });
+            return res.status(404).json(response.errorResponse('Venta no encontrada'));
+        }
+
+        if (sale.status === 'Cancelada') {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Venta ya cancelada', { saleId });
+            return res.status(409).json(response.errorResponse('La venta ya se encuentra cancelada'));
+        }
+
+        if (req.user?.role === 'Cliente') {
+            const customerQuery = {
+                where: { user_id: req.user.user_id },
+                transaction
+            };
+
+            if (transaction) {
+                customerQuery.lock = transaction.LOCK.UPDATE;
+            }
+
+            const customer = await Customer.findOne(customerQuery);
+
+            if (!customer || customer.customer_id !== sale.customer_id) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Cliente intentó cancelar una venta que no le pertenece', { saleId, userId: req.user.user_id });
+                return res.status(403).json(response.errorResponse('No está autorizado para cancelar esta venta'));
+            }
+        }
+
+        for (const detail of sale.sale_details) {
+            const quantity = Number(detail.quantity) || 0;
+            if (!quantity) {
+                continue;
+            }
+
+            if (detail.product_id) {
+                await Product.increment('stock', {
+                    by: quantity,
+                    where: { product_id: detail.product_id },
+                    transaction
+                });
+                await restoreBatchStock({ productId: detail.product_id, quantity, transaction });
+            }
+
+            if (detail.car_id) {
+                await Car.increment('stock', {
+                    by: quantity,
+                    where: { car_id: detail.car_id },
+                    transaction
+                });
+                await restoreBatchStock({ carId: detail.car_id, quantity, transaction });
+            }
+
+            if (detail.status !== false) {
+                await detail.update({ status: false }, { transaction });
+            }
+        }
+
+        for (const promoUse of sale.promo_code_uses) {
+            if (promoUse.status !== false) {
+                await promoUse.update({ status: false }, { transaction });
+            }
+        }
+
+        for (const payment of sale.payments) {
+            if (payment.status !== 'Reembolsado') {
+                const notePrefix = payment.notes ? `${payment.notes} | ` : '';
+                await payment.update({
+                    status: 'Reembolsado',
+                    notes: `${notePrefix}Reembolso generado por cancelación de la venta ${saleId}`
+                }, { transaction });
+            }
+        }
+
+        await sale.update({ status: 'Cancelada' }, { transaction });
+
+        await transaction.commit();
+
+        const updatedSale = await fetchSaleWithRelations(saleId);
+        logger.info('Venta cancelada correctamente', { saleId });
+        return res.status(200).json(response.successResponse(updatedSale, 'Venta cancelada correctamente'));
+    } catch (err) {
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
+        logger.error('Error al cancelar la venta', err);
+        return res.status(500).json(response.errorResponse('Error al cancelar la venta', err));
+    }
+};
+
+const updateSaleStatus = async(req, res) => {
+    const response = new ApiResponse();
+    const saleId = Number(req.params.saleId);
+
+    if (!Number.isInteger(saleId)) {
+        logger.warn('Identificador de venta inválido al actualizar estado', { saleId: req.params.saleId });
+        return res.status(400).json(response.errorResponse('Identificador de venta inválido'));
+    }
+
+    const { error, value } = saleStatusSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+        logger.warn('Datos inválidos al actualizar estado de venta', error);
+        return res.status(400).json(response.errorResponse('Datos inválidos', error));
+    }
+
+    const { status } = value;
+
+    if (status === 'Cancelada') {
+        logger.info('Solicitud de actualización de estado a cancelada redirigida a cancelSale', { saleId });
+        return cancelSale(req, res);
+    }
+
+    if (!SALE_STATUS_VALUES.includes(status)) {
+        logger.warn('Estado de venta no permitido', { saleId, status });
+        return res.status(400).json(response.errorResponse('Estado de venta no permitido'));
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+        const sale = await Sale.findOne({
+            where: { sale_id: saleId },
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
+
+        if (!sale) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Venta no encontrada al actualizar estado', { saleId });
+            return res.status(404).json(response.errorResponse('Venta no encontrada'));
+        }
+
+        if (sale.status === 'Cancelada') {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.warn('Intento de actualizar una venta cancelada', { saleId });
+            return res.status(409).json(response.errorResponse('No es posible actualizar una venta cancelada'));
+        }
+
+        if (sale.status === status) {
+            if (!transaction.finished) {
+                await transaction.rollback();
+            }
+            logger.info('Venta ya se encuentra en el estado solicitado', { saleId, status });
+            const currentSale = await fetchSaleWithRelations(saleId);
+            return res.status(200).json(response.successResponse(currentSale, 'La venta ya se encuentra en el estado solicitado'));
+        }
+
+        await sale.update({ status }, { transaction });
+
+        await transaction.commit();
+
+        const updatedSale = await fetchSaleWithRelations(saleId);
+        logger.info('Estado de venta actualizado correctamente', { saleId, status });
+        return res.status(200).json(response.successResponse(updatedSale, 'Estado de venta actualizado correctamente'));
+    } catch (err) {
+        if (!transaction.finished) {
+            await transaction.rollback();
+        }
+        logger.error('Error al actualizar el estado de la venta', err);
+        return res.status(500).json(response.errorResponse('Error al actualizar el estado de la venta', err));
+    }
+};
+
+
+module.exports = {listSales, createdSale, cancelSale, updateSaleStatus}
