@@ -44,7 +44,6 @@ const carSaleDetailSchema = Joi.object({
 const paymentSchema = Joi.object({
     payment_method: Joi.string().valid(...PAYMENT_METHODS).required(),
     amount: Joi.number().precision(2).positive().required(),
-    transaction_id: Joi.string().max(100).allow(null, '').optional(),
     notes: Joi.string().max(500).allow(null, '').optional(),
 });
 
