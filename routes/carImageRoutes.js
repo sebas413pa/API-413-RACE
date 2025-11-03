@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-router.get('/', authenticateJWT, checkRole(['Administrador','Empleado']), controller.listCarImages);
+router.get('/', controller.listCarImages);
 router.post('/', authenticateJWT, checkRole(['Administrador','Empleado']), upload.array('images', 10), controller.createCarImage);
 router.put('/:car_image_id', authenticateJWT, checkRole(['Administrador','Empleado']), upload.single('image'), controller.updateCarImage);
 router.patch('/activate/:car_image_id', authenticateJWT, checkRole(['Administrador','Empleado']), controller.activateCarImage);
