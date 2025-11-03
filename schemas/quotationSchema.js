@@ -8,10 +8,7 @@ const QUOTATION_STATUS_VALUES = [
 ];
 
 const createQuotationSchema = Joi.object({
-    customer_id: Joi.number().integer().positive().optional(),
-    car_id: Joi.number().integer().positive().required(),
-    total: Joi.number().precision(2).positive().optional(),
-    is_active: Joi.boolean().optional()
+    car_id: Joi.number().integer().positive().required()
 });
 
 const listQuotationSchema = Joi.object({
