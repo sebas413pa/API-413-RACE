@@ -251,6 +251,14 @@ const listCatalogProducts = async (req, res) => {
       const regularPriceCandidate = toPriceNumber(obj.sale_price) ?? toPriceNumber(obj.purchase_price);
       const regularPrice = regularPriceCandidate !== null ? Number(regularPriceCandidate.toFixed(2)) : null;
       const promotionData = regularPrice !== null ? selectBestPromotion(regularPrice, obj.promotion_products) : null;
+      let discountPercentage = null;
+
+      if (promotionData && Number.isFinite(regularPrice) && regularPrice > 0) {
+        const difference = regularPrice - promotionData.price;
+        if (difference > 0) {
+          discountPercentage = Number(((difference / regularPrice) * 100).toFixed(2));
+        }
+      }
 
       const result = {
         product_id: obj.product_id,
@@ -260,6 +268,7 @@ const listCatalogProducts = async (req, res) => {
         stock: obj.stock,
         regular_price: regularPrice,
         promotion_price: promotionData ? promotionData.price : null,
+        promotion_discount_percentage: discountPercentage,
         promotion: promotionData
           ? {
               promotion_id: promotionData.promotion.promotion_id,
