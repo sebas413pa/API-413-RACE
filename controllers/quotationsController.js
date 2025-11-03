@@ -5,6 +5,7 @@ const { sequelize } = require('../db');
 const { Op } = require('sequelize');
 const ApiResponse = require('../utils/apiResponse');
 const logger = require('../utils/logger');
+const { sendQuotationEmail } = require('../services/emailService');
 const {
     createQuotationSchema,
     listQuotationSchema,
@@ -15,7 +16,8 @@ const {
 const {
     quotations: Quotation,
     customers: Customer,
-    cars: Car
+    cars: Car,
+    users: User
 } = models;
 
 const buildQuotationIncludes = () => ([
@@ -126,22 +128,20 @@ const createQuotation = async(req, res) => {
     }
 
     try {
-        let customerId = value.customer_id || null;
-
-        if (req.user?.role === 'Cliente') {
-            customerId = await findCustomerIdForUser(req.user.user_id);
-            if (!customerId) {
-                logger.warn('Cliente autenticado sin registro al crear cotización', { user_id: req.user.user_id });
-                return res.status(403).json(response.errorResponse('Debe completar su registro como cliente'));
-            }
+        if (!req.user) {
+            logger.warn('Intento de crear cotización sin usuario autenticado');
+            return res.status(401).json(response.errorResponse('Debe autenticarse para crear cotizaciones'));
         }
 
+        const customerId = await findCustomerIdForUser(req.user.user_id);
         if (!customerId) {
-            logger.warn('Se intentó crear cotización sin cliente asociado');
-            return res.status(400).json(response.errorResponse('Debe especificar un cliente válido'));
+            logger.warn('Usuario autenticado sin registro de cliente al crear cotización', { user_id: req.user.user_id });
+            return res.status(403).json(response.errorResponse('Debe completar su registro como cliente antes de crear cotizaciones'));
         }
 
-        const customer = await Customer.findByPk(customerId);
+        const customer = await Customer.findByPk(customerId, {
+            include: [{ model: User, as: 'user', attributes: ['email', 'username'] }]
+        });
         if (!customer) {
             logger.warn('Cliente no encontrado al crear cotización', { customerId });
             return res.status(404).json(response.errorResponse('Cliente no encontrado'));
@@ -158,7 +158,7 @@ const createQuotation = async(req, res) => {
             return res.status(409).json(response.errorResponse('El vehículo seleccionado no está disponible'));
         }
 
-        const normalizedTotal = normalizeTotal(typeof value.total !== 'undefined' ? value.total : car.sale_price);
+        const normalizedTotal = car.sale_price;
 
         const createPayload = {
             customer_id: customerId,
@@ -176,6 +176,54 @@ const createQuotation = async(req, res) => {
             where: { quotation_id: quotation.quotation_id },
             include: buildQuotationIncludes()
         });
+
+        const quotationData = created.get({ plain: true });
+        const recipientEmail = customer.user?.email;
+
+        if (recipientEmail) {
+            const carInfo = quotationData.car
+                ? [quotationData.car.car_name, quotationData.car.model].filter(Boolean).join(' ')
+                : 'Vehículo pendiente';
+
+            const parsedTotal = quotationData.total !== null && quotationData.total !== undefined
+                ? Number(quotationData.total)
+                : null;
+
+            const totalDisplay = parsedTotal !== null && Number.isFinite(parsedTotal)
+                ? parsedTotal.toFixed(2)
+                : 'Pendiente de definir';
+
+            const createdAtValue = quotationData.createdAt ? new Date(quotationData.createdAt) : new Date();
+            const createdAtDisplay = Number.isNaN(createdAtValue.getTime())
+                ? new Date().toLocaleString('es-ES')
+                : createdAtValue.toLocaleString('es-ES');
+
+            const fullName = `${customer.first_name} ${customer.last_name}`.trim();
+
+            const html = (
+                `<p>Hola ${fullName},</p>
+                <p>Gracias por solicitar una cotización. Estos son los detalles de tu solicitud:</p>
+                <ul>
+                    <li><strong>Número de cotización:</strong> ${quotationData.quotation_id}</li>
+                    <li><strong>Vehículo:</strong> ${carInfo}</li>
+                    <li><strong>Total estimado:</strong> ${totalDisplay}</li>
+                    <li><strong>Estado:</strong> ${quotationData.status}</li>
+                    <li><strong>Fecha de creación:</strong> ${createdAtDisplay}</li>
+                </ul>
+                <p>Un asesor se pondrá en contacto contigo para brindarte más información.</p>
+                <p>Saludos,<br/>Equipo 413-RACE</p>`
+            ).trim();
+
+            const subject = `Cotización #${quotationData.quotation_id} - ${carInfo || 'Vehículo'}`;
+
+            await sendQuotationEmail({
+                to: recipientEmail,
+                subject,
+                html,
+            });
+        } else {
+            logger.warn('Cliente no tiene correo electrónico asociado, se omite envío de cotización', { customerId });
+        }
 
         logger.info('Cotización creada exitosamente', { quotation_id: quotation.quotation_id });
         return res.status(201).json(response.successResponse(created, 'Cotización creada exitosamente'));

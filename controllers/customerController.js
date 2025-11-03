@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const config = require('../config/config');
+const { sendEmail } = require('../services/emailService');
 const { sequelize, models } = require('../db');
 const { customers: Customer, users: User, roles: Role, promo_codes: PromoCode, cities:City, reset_tokens: ResetToken } = models;
 const bcrypt = require('bcryptjs');
@@ -112,6 +113,43 @@ const createCustomer = async (req, res) => {
 
       const customerData = newCustomer.toJSON ? newCustomer.toJSON() : newCustomer;
       const promoData = welcomePromo.toJSON ? welcomePromo.toJSON() : welcomePromo;
+
+      if (newUser.email) {
+        try {
+          const customerName = `${first_name} ${last_name}`.trim() || newUser.username;
+          const discountValueNumber = Number(promoData.discount_value);
+          const isNumericDiscount = Number.isFinite(discountValueNumber);
+          const discountLabel = promoData.discount_type === 'percentage'
+            ? `${isNumericDiscount ? discountValueNumber : promoData.discount_value}%`
+            : `$${isNumericDiscount ? discountValueNumber.toFixed(2) : Number(promoData.discount_value || 0).toFixed(2)}`;
+          const endDateValue = promoData.end_date ? new Date(promoData.end_date) : null;
+          const endDateLabel = endDateValue && !Number.isNaN(endDateValue.getTime())
+            ? endDateValue.toLocaleDateString('es-ES')
+            : 'Sin fecha de expiración definida';
+          const html = (
+            `<p>Hola ${customerName},</p>
+            <p>Bienvenido a <strong>413 RACE</strong>. Gracias por unirte a nuestra comunidad.</p>
+            <p>Para celebrar tu registro te obsequiamos un código promocional:</p>
+            <ul>
+              <li><strong>Código:</strong> ${promoData.promo_code}</li>
+              <li><strong>Descuento:</strong> ${discountLabel}</li>
+              <li><strong>Vigencia:</strong> ${endDateLabel}</li>
+            </ul>
+            <p>Ingresa el código durante tu próxima compra para activar el beneficio.</p>
+            <p>¡Te esperamos!<br/>Equipo 413 RACE</p>`
+          ).trim();
+
+          await sendEmail({
+            to: newUser.email,
+            subject: '¡Bienvenido a 413 RACE!',
+            html,
+          });
+        } catch (emailError) {
+          logger.error('Error al enviar correo de bienvenida', emailError);
+        }
+      } else {
+        logger.warn('Nuevo cliente sin correo electrónico, se omite envío de bienvenida', { customer_id: newCustomer.customer_id });
+      }
 
       return res.status(201).json(
         response.successResponse(
