@@ -27,7 +27,7 @@ module.exports = function(sequelize, DataTypes) {
     payment_date: {
       type: DataTypes.DATE,
       allowNull: true,
-      defaultValue: Sequelize.Sequelize.fn('current_timestamp')
+      defaultValue: Sequelize.Sequelize.literal('CURRENT_TIMESTAMP')
     },
     status: {
       type: DataTypes.ENUM('Pendiente','Aprobado','Rechazado','Reembolsado'),
@@ -36,6 +36,10 @@ module.exports = function(sequelize, DataTypes) {
     },
     transaction_id: {
       type: DataTypes.STRING(100),
+      allowNull: true
+    },
+    card_number: {
+      type: DataTypes.STRING(30),
       allowNull: true
     },
     notes: {

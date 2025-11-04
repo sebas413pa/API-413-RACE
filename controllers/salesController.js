@@ -12,6 +12,27 @@ const { PEPS, decreaseBatch, restoreBatchStock   } = require('../services/batchS
 const { getProductEffectivePrice } = require('../services/productService');
 const { getCarEffectivePrice } = require('../services/carService');
 
+const CARD_PAYMENT_METHODS = new Set(['Tarjeta de Credito', 'Tarjeta de Debito']);
+
+const requiresCardNumber = (paymentMethod) => CARD_PAYMENT_METHODS.has(paymentMethod);
+
+const maskCardNumber = (cardNumber) => {
+    if (!cardNumber) {
+        return null;
+    }
+
+    const digitsOnly = String(cardNumber).replace(/[^0-9]/g, '');
+    if (digitsOnly.length < 4) {
+        return null;
+    }
+
+    const hiddenSection = digitsOnly.slice(0, -4).replace(/\d/g, '*');
+    const visibleSection = digitsOnly.slice(-4);
+    const combined = `${hiddenSection}${visibleSection}`;
+
+    return combined.replace(/(.{4})/g, '$1 ').trim();
+};
+
 const buildSaleIncludes = () => ([
     {
         model: SaleDetail,
@@ -49,7 +70,7 @@ const buildSaleIncludes = () => ([
     {
         model: Payment,
         as: 'payments',
-        attributes: ['payment_id', 'payment_method', 'amount', 'status', 'payment_date', 'transaction_id', 'notes']
+        attributes: ['payment_id', 'payment_method', 'amount', 'status', 'payment_date', 'transaction_id', 'notes', 'card_number']
     }
 ]);
 
@@ -151,6 +172,22 @@ const createdSale = async(req, res) => {
         return res.status(400).json(response.errorResponse("Datos invalidos", error));
     }
     const { details, promo_code: promoCodeInput, payment } = value;
+    const needsCardNumber = requiresCardNumber(payment.payment_method);
+    const rawCardNumber = payment.card_number;
+    let maskedCardNumber = null;
+
+    if (needsCardNumber) {
+        maskedCardNumber = maskCardNumber(rawCardNumber);
+        if (!maskedCardNumber) {
+            logger.warn('Número de tarjeta inválido después de la validación', { payment_method: payment.payment_method });
+            return res.status(400).json(response.errorResponse('Número de tarjeta inválido'));
+        }
+    }
+
+    if (typeof payment.card_number !== 'undefined') {
+        delete payment.card_number;
+    }
+
     const transaction = await sequelize.transaction();
     try
     {
@@ -368,6 +405,7 @@ const createdSale = async(req, res) => {
             status: paymentStatus,
             transaction_id: transactionId,
             notes: payment.notes ? payment.notes : null,
+            card_number: maskedCardNumber,
         };
 
         await createdSale.update({
@@ -403,6 +441,21 @@ const createCarSale = async(req, res) => {
     }
 
     const { customer_id: customerId, quotation_id: quotationId, promo_code: promoCodeInput, payment, details } = value;
+    const needsCardNumber = requiresCardNumber(payment.payment_method);
+    const rawCardNumber = payment.card_number;
+    let maskedCardNumber = null;
+
+    if (needsCardNumber) {
+        maskedCardNumber = maskCardNumber(rawCardNumber);
+        if (!maskedCardNumber) {
+            logger.warn('Número de tarjeta inválido para venta de vehículo', { payment_method: payment.payment_method });
+            return res.status(400).json(response.errorResponse('Número de tarjeta inválido'));
+        }
+    }
+
+    if (typeof payment.card_number !== 'undefined') {
+        delete payment.card_number;
+    }
     const vehicleDetail = details[0];
     const quantity = Number(vehicleDetail.quantity || 1);
     const manualSalePriceRaw = vehicleDetail.sale_price;
@@ -688,6 +741,7 @@ const createCarSale = async(req, res) => {
             status: 'Aprobado',
             transaction_id: randomUUID(),
             notes: payment.notes ? payment.notes : null,
+            card_number: maskedCardNumber,
         };
 
         await createdSale.update({

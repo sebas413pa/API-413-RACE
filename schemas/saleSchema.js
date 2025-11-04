@@ -24,6 +24,8 @@ const PAYMENT_METHODS = [
     'Otro'
 ];
 
+const CARD_REQUIRED_METHODS = ['Tarjeta de Credito', 'Tarjeta de Debito'];
+
 const SALE_STATUS_VALUES = [
     'Pendiente',
     'Enviada',
@@ -42,9 +44,22 @@ const carSaleDetailSchema = Joi.object({
     quantity: Joi.number().integer().positive().default(1),
 });
 
+const cardNumberSchema = Joi.string()
+    .trim()
+    .replace(/\s+/g, '')
+    .pattern(/^\d{12,19}$/)
+    .messages({
+        'string.pattern.base': 'El número de tarjeta debe contener entre 12 y 19 dígitos',
+    });
+
 const paymentSchema = Joi.object({
     payment_method: Joi.string().valid(...PAYMENT_METHODS).required(),
     amount: Joi.number().precision(2).positive().required(),
+    card_number: Joi.alternatives().conditional('payment_method', {
+        is: Joi.valid(...CARD_REQUIRED_METHODS),
+        then: cardNumberSchema.required(),
+        otherwise: Joi.any().strip(),
+    }),
     notes: Joi.string().max(500).allow(null, '').optional(),
 });
 

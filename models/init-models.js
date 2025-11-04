@@ -19,7 +19,6 @@ var _promotions = require("./promotions");
 var _purchase_details = require("./purchase_details");
 var _purchases = require("./purchases");
 var _quotations = require("./quotations");
-var _reset_tokens = require("./reset_tokens");
 var _roles = require("./roles");
 var _sale_details = require("./sale_details");
 var _sales = require("./sales");
@@ -48,7 +47,6 @@ function initModels(sequelize) {
   var purchase_details = _purchase_details(sequelize, DataTypes);
   var purchases = _purchases(sequelize, DataTypes);
   var quotations = _quotations(sequelize, DataTypes);
-  var reset_tokens = _reset_tokens(sequelize, DataTypes);
   var roles = _roles(sequelize, DataTypes);
   var sale_details = _sale_details(sequelize, DataTypes);
   var sales = _sales(sequelize, DataTypes);
@@ -64,6 +62,8 @@ function initModels(sequelize) {
   car_categories.hasMany(car_lines, { as: "car_lines", foreignKey: "category_id"});
   cars.belongsTo(car_lines, { as: "line", foreignKey: "line_id"});
   car_lines.hasMany(cars, { as: "cars", foreignKey: "line_id"});
+  batches.belongsTo(cars, { as: "car", foreignKey: "car_id"});
+  cars.hasMany(batches, { as: "batches", foreignKey: "car_id"});
   car_images.belongsTo(cars, { as: "car", foreignKey: "car_id"});
   cars.hasMany(car_images, { as: "car_images", foreignKey: "car_id"});
   promotion_products.belongsTo(cars, { as: "car", foreignKey: "car_id"});
@@ -124,8 +124,6 @@ function initModels(sequelize) {
   users.hasOne(customers, { as: "customer", foreignKey: "user_id"});
   employees.belongsTo(users, { as: "user", foreignKey: "user_id"});
   users.hasOne(employees, { as: "employee", foreignKey: "user_id"});
-  reset_tokens.belongsTo(users, { as: "user", foreignKey: "user_id"});
-  users.hasMany(reset_tokens, { as: "reset_tokens", foreignKey: "user_id"});
   tokens.belongsTo(users, { as: "user", foreignKey: "user_id"});
   users.hasMany(tokens, { as: "tokens", foreignKey: "user_id"});
 
@@ -150,7 +148,6 @@ function initModels(sequelize) {
     purchase_details,
     purchases,
     quotations,
-    reset_tokens,
     roles,
     sale_details,
     sales,
