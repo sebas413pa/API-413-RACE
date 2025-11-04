@@ -54,7 +54,7 @@ const cardNumberSchema = Joi.string()
 
 const paymentSchema = Joi.object({
     payment_method: Joi.string().valid(...PAYMENT_METHODS).required(),
-    amount: Joi.number().precision(2).positive().required(),
+    amount: Joi.number().precision(2).min(0).optional().strip(),
     card_number: Joi.alternatives().conditional('payment_method', {
         is: Joi.valid(...CARD_REQUIRED_METHODS),
         then: cardNumberSchema.required(),
