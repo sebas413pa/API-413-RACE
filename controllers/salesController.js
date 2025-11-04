@@ -384,16 +384,7 @@ const createdSale = async(req, res) => {
         }
 
         const discountCombined = Number((lineDiscountRounded + promoDiscount).toFixed(2));
-        const paymentAmount = Number(payment.amount);
-        const paymentAmountRounded = Number(paymentAmount.toFixed(2));
-
-        if (Math.abs(paymentAmountRounded - total) > 0.01) {
-            if (!transaction.finished) {
-                await transaction.rollback();
-            }
-            logger.warn('Monto de pago no coincide con el total calculado', { paymentAmount: paymentAmountRounded, total });
-            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta',{ paymentAmount: paymentAmountRounded, total } ));
-        }
+        const paymentAmountRounded = Number(total.toFixed(2));
 
         const paymentStatus = 'Aprobado';
         const transactionId = randomUUID();
@@ -620,10 +611,9 @@ const createCarSale = async(req, res) => {
             await decreaseBatch(batch.batch_id, quantity, transaction);
         }
 
-        const subtotalRounded = lineSubtotal;
-        let total = lineTotal;
-        const paymentAmountRounded = Number(Number(payment.amount).toFixed(2));
-        let promoDiscount = 0;
+    const subtotalRounded = lineSubtotal;
+    let total = lineTotal;
+    let promoDiscount = 0;
 
         if (!hasManualSalePrice && promoCodeInput) {
             const promoCode = await PromoCode.findOne({
@@ -725,14 +715,7 @@ const createCarSale = async(req, res) => {
         }
 
         const discountCombined = Number((lineDiscount + promoDiscount).toFixed(2));
-
-        if (Math.abs(paymentAmountRounded - total) > 0.01) {
-            if (!transaction.finished) {
-                await transaction.rollback();
-            }
-            logger.warn('Monto de pago no coincide con el total de la venta de vehículo', { paymentAmount: paymentAmountRounded, total });
-            return res.status(400).json(response.errorResponse('El monto del pago debe coincidir con el total de la venta', { paymentAmount: paymentAmountRounded, total }));
-        }
+        const paymentAmountRounded = Number(total.toFixed(2));
 
         const paymentPayload = {
             sale_id: createdSale.sale_id,
