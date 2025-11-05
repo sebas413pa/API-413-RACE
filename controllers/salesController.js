@@ -171,7 +171,7 @@ const createdSale = async(req, res) => {
         logger.error("Datos invalidos", error);
         return res.status(400).json(response.errorResponse("Datos invalidos", error));
     }
-    const { details, promo_code: promoCodeInput, payment } = value;
+    const { details, promo_code: promoCodeInput, payment, customer: customerPayload } = value;
     const needsCardNumber = requiresCardNumber(payment.payment_method);
     const rawCardNumber = payment.card_number;
     let maskedCardNumber = null;
@@ -191,26 +191,44 @@ const createdSale = async(req, res) => {
     const transaction = await sequelize.transaction();
     try
     {
-        let customer_id;
-        if(user)
-        {
-            const customer = await Customer.findOne({
-                where: {
-                    user_id: user.user_id
-                }, transaction
+        let customerRecord = null;
+        if (user?.user_id) {
+            customerRecord = await Customer.findOne({
+                where: { user_id: user.user_id },
+                transaction,
+                lock: transaction.LOCK.UPDATE,
             });
 
-            if (customer) {
-                customer_id = customer.customer_id;
-            } else {
+            if (!customerRecord) {
                 logger.warn("Usuario autenticado sin registro de cliente", { user_id: user.user_id });
             }
-            customer_id = customer ? customer.customer_id : null;
         }
-        else
-        {
-            customer_id = null
+
+        if (!customerRecord) {
+            if (!customerPayload) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Información de cliente faltante para venta de producto');
+                return res.status(400).json(response.errorResponse('Debe proporcionar la información del cliente para completar la venta'));
+            }
+
+            customerRecord = await Customer.create({
+                user_id: user?.role === 'Cliente' ? user.user_id : null,
+                first_name: customerPayload.first_name,
+                last_name: customerPayload.last_name,
+                gender: typeof customerPayload.gender !== 'undefined' && customerPayload.gender !== null
+                    ? customerPayload.gender
+                    : 'Otro',
+                phone: customerPayload.phone,
+                address: customerPayload.address,
+                city_id: customerPayload.city_id,
+            }, { transaction });
+
+            logger.info('Cliente creado automáticamente durante la venta de producto', { customer_id: customerRecord.customer_id });
         }
+
+        const customer_id = customerRecord.customer_id;
         const createdSale = await Sale.create({
             customer_id: customer_id,
             sale_date: new Date(),
@@ -431,7 +449,8 @@ const createCarSale = async(req, res) => {
         return res.status(400).json(response.errorResponse('Datos inválidos', error));
     }
 
-    const { customer_id: customerId, quotation_id: quotationId, promo_code: promoCodeInput, payment, details } = value;
+    const { customer_id: customerIdInput, quotation_id: quotationId, promo_code: promoCodeInput, payment, details, customer: customerPayload } = value;
+    const user = req.user;
     const needsCardNumber = requiresCardNumber(payment.payment_method);
     const rawCardNumber = payment.card_number;
     let maskedCardNumber = null;
@@ -455,21 +474,62 @@ const createCarSale = async(req, res) => {
     const transaction = await sequelize.transaction();
 
     try {
-        const customer = await Customer.findOne({
-            where: { customer_id: customerId },
-            transaction,
-            lock: transaction.LOCK.UPDATE
-        });
+        let customerId = customerIdInput || null;
+        let customerRecord = null;
 
-        if (!customer) {
-            if (!transaction.finished) {
-                await transaction.rollback();
+        if (customerId) {
+            customerRecord = await Customer.findOne({
+                where: { customer_id: customerId },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (!customerRecord) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Cliente no encontrado al crear venta de vehículo', { customerId });
+                return res.status(404).json(response.errorResponse('Cliente no encontrado'));
             }
-            logger.warn('Cliente no encontrado al crear venta de vehículo', { customerId });
-            return res.status(404).json(response.errorResponse('Cliente no encontrado'));
+        } else if (req.user?.user_id) {
+            customerRecord = await Customer.findOne({
+                where: { user_id: req.user.user_id },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+
+            if (customerRecord) {
+                customerId = customerRecord.customer_id;
+            }
         }
 
-    if (customer.status === false || customer.status === 0) {
+        if (!customerRecord) {
+            if (!customerPayload) {
+                if (!transaction.finished) {
+                    await transaction.rollback();
+                }
+                logger.warn('Información de cliente faltante para venta de vehículo');
+                return res.status(400).json(response.errorResponse('Debe proporcionar la información del cliente para completar la venta'));
+            }
+
+            customerRecord = await Customer.create({
+                user_id: user?.role === 'Cliente' ? user.user_id : null,
+                first_name: customerPayload.first_name,
+                last_name: customerPayload.last_name,
+                birthday: customerPayload.birthday,
+                gender: typeof customerPayload.gender !== 'undefined' && customerPayload.gender !== null
+                    ? customerPayload.gender
+                    : 'Otro',
+                phone: customerPayload.phone,
+                address: customerPayload.address,
+                city_id: customerPayload.city_id,
+            }, { transaction });
+
+            customerId = customerRecord.customer_id;
+            logger.info('Cliente creado automáticamente durante la venta de vehículo', { customer_id: customerId });
+        }
+
+        if (customerRecord.status === false || customerRecord.status === 0) {
             if (!transaction.finished) {
                 await transaction.rollback();
             }
@@ -611,9 +671,9 @@ const createCarSale = async(req, res) => {
             await decreaseBatch(batch.batch_id, quantity, transaction);
         }
 
-    const subtotalRounded = lineSubtotal;
-    let total = lineTotal;
-    let promoDiscount = 0;
+        const subtotalRounded = lineSubtotal;
+        let total = lineTotal;
+        let promoDiscount = 0;
 
         if (!hasManualSalePrice && promoCodeInput) {
             const promoCode = await PromoCode.findOne({

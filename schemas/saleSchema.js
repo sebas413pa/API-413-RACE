@@ -44,6 +44,15 @@ const carSaleDetailSchema = Joi.object({
     quantity: Joi.number().integer().positive().default(1),
 });
 
+const guestCustomerSchema = Joi.object({
+    first_name: Joi.string().max(100).required(),
+    last_name: Joi.string().max(100).required(),
+    gender: Joi.string().valid('Masculino', 'Femenino', 'Otro'),
+    phone: Joi.string().min(8).max(50).required(),
+    address: Joi.string().min(1).max(255).required(),
+    city_id: Joi.number().integer().positive().required(),
+});
+
 const cardNumberSchema = Joi.string()
     .trim()
     .replace(/\s+/g, '')
@@ -66,6 +75,7 @@ const paymentSchema = Joi.object({
 const saleBaseSchema = Joi.object({
     promo_code: Joi.string().trim().min(1).max(50).optional(),
     payment: paymentSchema.required(),
+    customer: guestCustomerSchema.optional(),
     details: Joi.array().items(saleDetailSchema).min(1).required(),
 });
 
@@ -74,10 +84,11 @@ const saleStatusSchema = Joi.object({
 });
 
 const carSaleSchema = Joi.object({
-    customer_id: Joi.number().integer().positive().required(),
+    customer_id: Joi.number().integer().positive().optional(),
     quotation_id: Joi.number().integer().positive().optional(),
     promo_code: Joi.string().trim().min(1).max(50).optional(),
     payment: paymentSchema.required(),
+    customer: guestCustomerSchema.optional(),
     details: Joi.array().items(carSaleDetailSchema).length(1).required(),
 });
 
