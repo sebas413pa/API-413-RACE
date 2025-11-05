@@ -7,13 +7,14 @@ const { sequelize, models } = require('../db');
 const { customers: Customer, users: User, roles: Role, promo_codes: PromoCode, cities:City, reset_tokens: ResetToken } = models;
 const bcrypt = require('bcryptjs');
 const logger = require('../utils/logger');
+const { welcomePromoTemplate } = require('../utils/emailTemplates');
 const ApiResponse = require('../utils/apiResponse');
 const {listCustomersSchema,
     createCustomerSchema,
     updateCustomerSchema,
     customerIdParamSchema} = require('../schemas/customerSchema');
 const { resetPasswordSchema } = require("../schemas/recoverSchema");
-const {createWelcomePromoCode} = require('../services/customerService')
+const {createWelcomePromoCode} = require('../services/customerService');
 
 const listCustomers = async (req, res) => {
     const response = new ApiResponse();
@@ -126,18 +127,12 @@ const createCustomer = async (req, res) => {
           const endDateLabel = endDateValue && !Number.isNaN(endDateValue.getTime())
             ? endDateValue.toLocaleDateString('es-ES')
             : 'Sin fecha de expiración definida';
-          const html = (
-            `<p>Hola ${customerName},</p>
-            <p>Bienvenido a <strong>413 RACE</strong>. Gracias por unirte a nuestra comunidad.</p>
-            <p>Para celebrar tu registro te obsequiamos un código promocional:</p>
-            <ul>
-              <li><strong>Código:</strong> ${promoData.promo_code}</li>
-              <li><strong>Descuento:</strong> ${discountLabel}</li>
-              <li><strong>Vigencia:</strong> ${endDateLabel}</li>
-            </ul>
-            <p>Ingresa el código durante tu próxima compra para activar el beneficio.</p>
-            <p>¡Te esperamos!<br/>Equipo 413 RACE</p>`
-          ).trim();
+          const html = welcomePromoTemplate({
+            customerName,
+            promoCode: promoData.promo_code,
+            discountLabel,
+            endDateLabel,
+          });
 
           await sendEmail({
             to: newUser.email,
