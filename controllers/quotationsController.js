@@ -2,10 +2,12 @@
 
 const { models } = require('../db');
 const { sequelize } = require('../db');
+const config = require('../config/config');
 const { Op } = require('sequelize');
 const ApiResponse = require('../utils/apiResponse');
 const logger = require('../utils/logger');
 const { sendQuotationEmail } = require('../services/emailService');
+const { quotationTemplate } = require('../utils/emailTemplates');
 const {
     createQuotationSchema,
     listQuotationSchema,
@@ -200,19 +202,25 @@ const createQuotation = async(req, res) => {
 
             const fullName = `${customer.first_name} ${customer.last_name}`.trim();
 
-            const html = (
-                `<p>Hola ${fullName},</p>
-                <p>Gracias por solicitar una cotización. Estos son los detalles de tu solicitud:</p>
-                <ul>
-                    <li><strong>Número de cotización:</strong> ${quotationData.quotation_id}</li>
-                    <li><strong>Vehículo:</strong> ${carInfo}</li>
-                    <li><strong>Total estimado:</strong> ${totalDisplay}</li>
-                    <li><strong>Estado:</strong> ${quotationData.status}</li>
-                    <li><strong>Fecha de creación:</strong> ${createdAtDisplay}</li>
-                </ul>
-                <p>Un asesor se pondrá en contacto contigo para brindarte más información.</p>
-                <p>Saludos,<br/>Equipo 413-RACE</p>`
-            ).trim();
+            const fallbackName = customer.user?.username || 'Piloto';
+            const displayName = fullName || fallbackName;
+            const hasSpecificOrigin = typeof config.cors?.origin === 'string' && config.cors.origin.trim().length && config.cors.origin !== '*';
+            const normalizedOrigin = hasSpecificOrigin
+                ? config.cors.origin.trim().replace(/\/$/, '')
+                : null;
+            const quotationUrl = normalizedOrigin
+                ? `${normalizedOrigin}/cotizaciones/${quotationData.quotation_id}`
+                : null;
+
+            const html = quotationTemplate({
+                customerName: displayName,
+                quotationNumber: quotationData.quotation_id,
+                carName: carInfo || 'Vehículo pendiente',
+                totalDisplay,
+                statusLabel: quotationData.status,
+                createdAtLabel: createdAtDisplay,
+                ctaUrl: quotationUrl,
+            });
 
             const subject = `Cotización #${quotationData.quotation_id} - ${carInfo || 'Vehículo'}`;
 

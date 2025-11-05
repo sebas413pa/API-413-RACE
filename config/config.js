@@ -52,7 +52,18 @@ const config = {
   },
   mail: {
     mailUser: process.env.MAIL_USER,
-    mailPass: process.env.MAIL_PASS
+    mailPass: process.env.MAIL_PASS,
+    from: process.env.MAIL_FROM,
+    brandLogoUrl: process.env.MAIL_BRAND_LOGO_URL,
+    brandHeroUrl: process.env.MAIL_BRAND_HERO_URL,
+    welcomeHeroUrl: process.env.MAIL_WELCOME_HERO_URL,
+    quotationHeroUrl: process.env.MAIL_QUOTATION_HERO_URL,
+    primaryColor: process.env.MAIL_BRAND_PRIMARY_COLOR || '#f44336',
+    secondaryColor: process.env.MAIL_BRAND_SECONDARY_COLOR || '#111827',
+    ctaUrl: process.env.MAIL_BRAND_CTA_URL
+  },
+  assets: {
+    baseUrl: process.env.ASSET_BASE_URL
   }
 };
 
