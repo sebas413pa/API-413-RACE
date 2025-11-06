@@ -16,6 +16,7 @@ const ApiResponse = require("../utils/apiResponse");
 const { listCarsSchema, createCarSchema, updateCarSchema, carIdParamSchema } = require("../schemas/carSchema");
 const config = require("../config/config");
 const {updateCarPrice, normalizeNumber, buildCarName, selectBestPromotion, computePromotionPrice, toPriceNumber, normalizeBoolean, normalizeString} = require("../services/carService")
+const { resolvePublicAssetUrl } = require('../utils/assetUrls');
 
 const listCars = async (req, res) => {
   const response = new ApiResponse();
@@ -38,7 +39,7 @@ const listCars = async (req, res) => {
       const obj = c.toJSON();
       obj.images = (obj.car_images || []).map((ci) => ({
         car_image_id: ci.car_image_id,
-        image_url: `${config.protocol}://${config.host}:${config.port}${ci.image_url}`,
+        image_url: resolvePublicAssetUrl(ci.image_url) || `${config.protocol}://${config.host}:${config.port}${ci.image_url}`,
         is_main: !!ci.is_main,
       }));
       delete obj.car_images;
@@ -111,7 +112,7 @@ const createCar = async (req, res) => {
           logger.debug('createCar - car_image created', { car_image_id: row.car_image_id, car_id: row.car_id, image_url: row.image_url });
         } catch (e) {
           logger.error('createCar - error creating CarImage', e);
-          throw e; 
+          throw e;
         }
       }
     }
@@ -120,7 +121,7 @@ const createCar = async (req, res) => {
 
     const result = car.toJSON();
     if (files.length) {
-      result.images = files.map((f) => ({ image_url: `${config.protocol}://${config.host}:${config.port}/uploads/cars/${f.filename}` }));
+      result.images = files.map((f) => ({ image_url: resolvePublicAssetUrl(`/uploads/cars/${f.filename}`) || `${config.protocol}://${config.host}:${config.port}/uploads/cars/${f.filename}` }));
     }
 
     return res.status(201).json(response.successResponse(result, "Car creado"));
@@ -423,7 +424,7 @@ const listCatalogCars = async (req, res) => {
 
       const images = (obj.car_images || []).map((img) => ({
         car_image_id: img.car_image_id,
-        image_url: `${config.protocol}://${config.host}:${config.port}${img.image_url}`,
+        image_url: resolvePublicAssetUrl(img.image_url) || `${config.protocol}://${config.host}:${config.port}${img.image_url}`,
         is_main: !!img.is_main,
       }));
 

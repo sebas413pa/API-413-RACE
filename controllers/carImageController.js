@@ -8,6 +8,7 @@ const ApiResponse = require('../utils/apiResponse');
 const { listCarImagesSchema, createCarImageSchema, updateCarImageSchema, carImageIdParamSchema } = require('../schemas/carImageSchema');
 
 const config = require('../config/config');
+const { resolvePublicAssetUrl } = require('../utils/assetUrls');
 
 const listCarImages = async (req, res) => {
   const response = new ApiResponse();
@@ -21,9 +22,7 @@ const listCarImages = async (req, res) => {
     const items = await CarImage.findAll({ where });
     const mapped = items.map(i => {
       const item = i.toJSON();
-      if (item.image_url && item.image_url.startsWith('/uploads')) {
-        item.image_url = `${config.protocol}://${config.host}:${config.port}${item.image_url}`;
-      }
+      item.image_url = resolvePublicAssetUrl(item.image_url) || (item.image_url && item.image_url.startsWith('/uploads') ? `${config.protocol}://${config.host}:${config.port}${item.image_url}` : item.image_url);
       return item;
     });
     return res.status(200).json(response.successResponse(mapped, 'Car images obtenidos'));
@@ -43,11 +42,11 @@ const createCarImage = async (req, res) => {
     const created = [];
     if (req.files && req.files.length) {
       for (const f of req.files) {
-        const relPath = `/uploads/cars/${f.filename}`;
-        const row = await CarImage.create({ car_id, image_url: relPath, is_main: !!is_main });
-        const obj = row.toJSON();
-        obj.image_url = `${config.protocol}://${config.host}:${config.port}${relPath}`;
-        created.push(obj);
+  const relPath = `/uploads/cars/${f.filename}`;
+  const row = await CarImage.create({ car_id, image_url: relPath, is_main: !!is_main });
+  const obj = row.toJSON();
+  obj.image_url = resolvePublicAssetUrl(relPath) || `${config.protocol}://${config.host}:${config.port}${relPath}`;
+  created.push(obj);
       }
       return res.status(201).json(response.successResponse(created, 'Car images creados exitosamente'));
     }

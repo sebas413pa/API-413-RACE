@@ -19,9 +19,57 @@ const {
     quotations: Quotation,
     customers: Customer,
     cars: Car,
-    users: User
+    users: User,
+    car_images: CarImage
 } = models;
 
+const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
+const DATA_URL_PREFIX = /^data:/i;
+
+const getAssetBaseUrl = () => {
+    const configuredBase = typeof config.assets?.baseUrl === 'string' ? config.assets.baseUrl.trim() : '';
+    if (configuredBase.length) {
+        return configuredBase.replace(/\/$/, '');
+    }
+
+    const protocol = typeof config.protocol === 'string' && config.protocol.trim().length
+        ? config.protocol.trim().replace(/:$/, '')
+        : 'http';
+    const host = typeof config.host === 'string' ? config.host.trim() : '';
+    if (!host.length) {
+        return null;
+    }
+    const numericPort = Number(config.port);
+    const shouldAppendPort = Number.isFinite(numericPort) && numericPort > 0
+        && !((protocol === 'https' && numericPort === 443) || (protocol === 'http' && numericPort === 80));
+    const portSegment = shouldAppendPort ? `:${numericPort}` : '';
+
+    return `${protocol}://${host}${portSegment}`;
+};
+
+const resolvePublicAssetUrl = (value) => {
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed.length) {
+        return null;
+    }
+
+    // If it's already an absolute URL or a data URL, return as-is
+    if (ABSOLUTE_URL_REGEX.test(trimmed) || DATA_URL_PREFIX.test(trimmed)) {
+        return trimmed;
+    }
+
+    const baseUrl = getAssetBaseUrl();
+    if (!baseUrl) {
+        return null;
+    }
+
+    const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    return `${baseUrl}${normalizedPath}`;
+};
 const buildQuotationIncludes = () => ([
     {
         model: Customer,
@@ -32,6 +80,16 @@ const buildQuotationIncludes = () => ([
         model: Car,
         as: 'car',
         attributes: ['car_id', 'car_name', 'model', 'sale_price']
+        ,
+        include: [
+            {
+                model: CarImage,
+                as: 'car_images',
+                attributes: ['car_image_id', 'image_url', 'is_main', 'status'],
+                where: { status: true },
+                required: false,
+            }
+        ]
     }
 ]);
 
@@ -191,6 +249,13 @@ const createQuotation = async(req, res) => {
                 ? Number(quotationData.total)
                 : null;
 
+            // pick a car image (main preferred) and resolve to a public URL
+            const carImages = Array.isArray(quotationData.car?.car_images)
+                ? quotationData.car.car_images
+                : [];
+            const mainCarImage = carImages.find((image) => Boolean(image?.is_main)) || carImages[0] || null;
+            const heroImageUrl = resolvePublicAssetUrl(mainCarImage?.image_url) || null;
+
             const totalDisplay = parsedTotal !== null && Number.isFinite(parsedTotal)
                 ? parsedTotal.toFixed(2)
                 : 'Pendiente de definir';
@@ -220,6 +285,7 @@ const createQuotation = async(req, res) => {
                 statusLabel: quotationData.status,
                 createdAtLabel: createdAtDisplay,
                 ctaUrl: quotationUrl,
+                heroImageUrl,
             });
 
             const subject = `Cotización #${quotationData.quotation_id} - ${carInfo || 'Vehículo'}`;

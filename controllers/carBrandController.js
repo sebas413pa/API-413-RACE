@@ -7,6 +7,7 @@ const { car_brands: CarBrand } = models;
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const config = require('../config/config');
+const { resolvePublicAssetUrl } = require('../utils/assetUrls');
 const {
   listCarBrandsSchema,
   createCarBrandSchema,
@@ -14,12 +15,7 @@ const {
   carBrandIdParamSchema,
 } = require('../schemas/carBrandSchema');
 
-const ensureAbsoluteUrl = (url) => {
-  if (!url) return url;
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  if (!url.startsWith('/uploads')) return url;
-  return `${config.protocol}://${config.host}:${config.port}${url}`;
-};
+// keep previous helpers for file operations (toAbsoluteUploadPath etc.) but prefer resolvePublicAssetUrl when returning URLs
 
 const toRelativeUploadPath = (filename) => `/uploads/car-brands/${filename}`;
 
@@ -74,7 +70,7 @@ const listCarBrands = async (req, res) => {
     const items = await CarBrand.findAll({ where });
     const mapped = items.map((brand) => {
       const data = brand.toJSON();
-      data.image_url = ensureAbsoluteUrl(data.image_url);
+      data.image_url = resolvePublicAssetUrl(data.image_url) || data.image_url;
       return data;
     });
     return res.status(200).json(response.successResponse(mapped, 'Car brands obtenidos exitosamente'));
@@ -114,9 +110,9 @@ const createCarBrand = async (req, res) => {
   }
 
   try {
-    const item = await CarBrand.create(dataToCreate);
-    const data = item.toJSON();
-    data.image_url = ensureAbsoluteUrl(data.image_url);
+  const item = await CarBrand.create(dataToCreate);
+  const data = item.toJSON();
+  data.image_url = resolvePublicAssetUrl(data.image_url) || data.image_url;
     return res.status(201).json(response.successResponse(data, 'Car brand creado'));
   } catch (err) {
     cleanupUpload();
@@ -189,8 +185,8 @@ const updateCarBrand = async (req, res) => {
       removeFileQuietly(previousImageAbsolute);
     }
 
-    const data = updated.toJSON();
-    data.image_url = ensureAbsoluteUrl(data.image_url);
+  const data = updated.toJSON();
+  data.image_url = resolvePublicAssetUrl(data.image_url) || data.image_url;
     return res.status(200).json(response.successResponse(data, 'Car brand actualizado'));
   } catch (err) {
     cleanupUpload();
