@@ -144,11 +144,15 @@ const quotationTemplate = ({
     statusLabel,
     createdAtLabel,
     ctaUrl,
+    heroImageUrl,
 }) => {
     const logoUrl = getBrandAsset(config.mail?.brandLogoUrl, DEFAULT_LOGO_URL);
     const brandHero = getBrandAsset(config.mail?.brandHeroUrl, DEFAULT_HERO_URL);
     const quotationHero = getBrandAsset(config.mail?.quotationHeroUrl, brandHero);
-    const heroUrl = quotationHero;
+    const heroUrlCandidate = typeof heroImageUrl === 'string' && heroImageUrl.trim().length
+        ? heroImageUrl.trim()
+        : null;
+    const heroUrl = heroUrlCandidate || quotationHero;
     const primaryColor = getColor(config.mail?.primaryColor, '#f44336');
     const secondaryColor = getColor(config.mail?.secondaryColor, '#111827');
     const accentColor = primaryColor;

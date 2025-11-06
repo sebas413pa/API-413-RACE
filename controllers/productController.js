@@ -20,6 +20,7 @@ const {
 } = require('../schemas/productSchema');
 
 const config = require('../config/config');
+const { resolvePublicAssetUrl } = require('../utils/assetUrls');
 
 const normalizeNumber = (value) => (value === undefined || value === null || value === '' ? undefined : Number(value));
 const normalizeBoolean = (value) => {
@@ -147,7 +148,7 @@ const listProducts = async (req, res) => {
 
     const mapped = items.map((product) => {
       const obj = product.toJSON();
-      obj.image_url = ensureAbsoluteUrl(obj.image_url);
+        obj.image_url = resolvePublicAssetUrl(obj.image_url) || ensureAbsoluteUrl(obj.image_url);
       return obj;
     });
 
@@ -197,7 +198,7 @@ const createProduct = async (req, res) => {
   const salePrice = Number((value.purchase_price / (1 - value.profit_margin / 100)).toFixed(2));
     const item = await Product.create({...value, sale_price: salePrice});
     const data = item.toJSON();
-    data.image_url = ensureAbsoluteUrl(data.image_url);
+    data.image_url = resolvePublicAssetUrl(data.image_url) || ensureAbsoluteUrl(data.image_url);
     const unusedFiles = uploadedFiles.filter((file) => file !== uploadFile);
     for (const file of unusedFiles) {
       if (file && file.path) removeFileQuietly(file.path);
@@ -265,6 +266,7 @@ const listCatalogProducts = async (req, res) => {
         name: obj.name,
         description: obj.description,
         image_url: ensureAbsoluteUrl(obj.image_url),
+    image_url: resolvePublicAssetUrl(obj.image_url) || ensureAbsoluteUrl(obj.image_url),
         stock: obj.stock,
         regular_price: regularPrice,
         promotion_price: promotionData ? promotionData.price : null,
@@ -358,7 +360,7 @@ const updateProduct = async (req, res) => {
 
     const updated = await item.update(value);
     const data = updated.toJSON();
-    data.image_url = ensureAbsoluteUrl(data.image_url);
+    data.image_url = resolvePublicAssetUrl(data.image_url) || ensureAbsoluteUrl(data.image_url);
 
     if (previousImage && previousImage !== nextImageValue) {
       const absolute = toAbsoluteUploadPath(previousImage);
