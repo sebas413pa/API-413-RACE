@@ -17,6 +17,7 @@ const { listCarsSchema, createCarSchema, updateCarSchema, carIdParamSchema } = r
 const config = require("../config/config");
 const {updateCarPrice, normalizeNumber, buildCarName, selectBestPromotion, computePromotionPrice, toPriceNumber, normalizeBoolean, normalizeString} = require("../services/carService")
 const { resolvePublicAssetUrl } = require('../utils/assetUrls');
+const { default: api } = require('../utils/apiClient');
 
 const listCars = async (req, res) => {
   const response = new ApiResponse();
@@ -95,10 +96,10 @@ const createCar = async (req, res) => {
       return res.status(404).json(response.errorResponse("line_id no encontrado"));
     }
 
-  const salePrice = Number((value.purchase_price / (1 - value.profit_margin / 100)).toFixed(2));
+    const salePrice = Number((value.purchase_price / (1 - value.profit_margin / 100)).toFixed(2));
     const carPayload = { ...value, car_name: buildCarName(line, value.model), sale_price: salePrice };
     const car = await Car.create(carPayload, { transaction: t });
-    await updateCarPrice(car.car_id, car.purchase_price, t);
+    const sale_price = await updateCarPrice(car.car_id, car.purchase_price, t);
     logger.debug('createCar - car created', { car_id: car.car_id, car_name: car.car_name });
 
     if (files.length) {
@@ -124,6 +125,33 @@ const createCar = async (req, res) => {
       result.images = files.map((f) => ({ image_url: resolvePublicAssetUrl(`/uploads/cars/${f.filename}`) || `${config.protocol}://${config.host}:${config.port}/uploads/cars/${f.filename}` }));
     }
 
+    const crmItem = await api.post('/cars', {
+      car_id: car.car_id,
+      car_name: car.car_name,
+      line_id: car.line_id,
+      color: car.color,
+      engine_capacity: car.engine_capacity,
+      type_car: car.type_car,
+      transmission: car.transmission,
+      model: car.model,
+      purchase_price: car.purchase_price,
+      stock: car.stock,
+      profit_margin: car.profit_margin,
+      image_url: `/uploads/cars/${files[0].filename}`,
+      sale_price: sale_price
+    })
+
+    if (!crmItem.data.success) {
+        await transaction.rollback();
+        cleanupUpload();
+
+        return res.status(400).json(
+          response.errorResponse(
+            'No se pudo sincronizar con el CRM',
+            crmResp.data
+          )
+      )
+    }
     return res.status(201).json(response.successResponse(result, "Car creado"));
   } catch (err) {
     try {

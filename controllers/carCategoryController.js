@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const { listCarCategoriesSchema, createCarCategorySchema, updateCarCategorySchema, carCategoryIdParamSchema } = require('../schemas/carCategorySchema');
 const { Op } = require('sequelize');
+const { default: api } = require('../utils/apiClient');
 
 const listCarCategories = async (req, res) => {
   const response = new ApiResponse();
@@ -28,8 +29,26 @@ const createCarCategory = async (req, res) => {
   const response = new ApiResponse();
   const { error, value } = createCarCategorySchema.validate(req.body);
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
+      const t = await sequelize.transaction();
   try {
+    
     const item = await CarCategory.create(value);
+    const crmItem = await api.post('/categories', {
+      category_id: item.car_category_id,
+      category_name: item.category_name
+    })
+
+    if (!crmItem.data.success) {
+        await t.rollback();
+
+        return res.status(400).json(
+          response.errorResponse(
+            'No se pudo sincronizar con el CRM',
+            crmResp.data
+          )
+      )
+    }
+        await t.commit();
     return res.status(201).json(response.successResponse(item, 'Car category creado'));
   } catch (err) {
     logger.error('Error al crear car_category', err);

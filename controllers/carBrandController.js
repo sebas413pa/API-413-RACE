@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { models } = require('../db');
+const { models, sequelize  } = require('../db');
 const { car_brands: CarBrand } = models;
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
@@ -14,8 +14,8 @@ const {
   updateCarBrandSchema,
   carBrandIdParamSchema,
 } = require('../schemas/carBrandSchema');
+const { default: api } = require('../utils/apiClient');
 
-// keep previous helpers for file operations (toAbsoluteUploadPath etc.) but prefer resolvePublicAssetUrl when returning URLs
 
 const toRelativeUploadPath = (filename) => `/uploads/car-brands/${filename}`;
 
@@ -109,10 +109,30 @@ const createCarBrand = async (req, res) => {
     setIfDefined(dataToCreate, 'image_url', normalizedImage);
   }
 
+  const transaction = await sequelize.transaction();
+
   try {
   const item = await CarBrand.create(dataToCreate);
-  const data = item.toJSON();
-  data.image_url = resolvePublicAssetUrl(data.image_url) || data.image_url;
+  const crmItem = await api.post('/brands', {
+    brand_id: item.brand_id,
+    brand_name: item.brand_name,
+    image_url: item.image_url
+  })
+
+  if (!crmItem.data.success) {
+      await transaction.rollback();
+      cleanupUpload();
+
+      return res.status(400).json(
+        response.errorResponse(
+          'No se pudo sincronizar con el CRM',
+          crmResp.data
+        )
+    )
+  }
+    const data = item.toJSON();
+    data.image_url = resolvePublicAssetUrl(data.image_url) || data.image_url;
+    await transaction.commit();
     return res.status(201).json(response.successResponse(data, 'Car brand creado'));
   } catch (err) {
     cleanupUpload();
