@@ -15,6 +15,8 @@ const {listCustomersSchema,
     customerIdParamSchema} = require('../schemas/customerSchema');
 const { resetPasswordSchema } = require("../schemas/recoverSchema");
 const {createWelcomePromoCode} = require('../services/customerService');
+const Joi = require('joi');
+const { default: api } = require('../utils/apiClient');
 
 const listCustomers = async (req, res) => {
     const response = new ApiResponse();
@@ -107,6 +109,28 @@ const createCustomer = async (req, res) => {
         address,
         city_id
       }, { transaction });
+      const apiPayload = {
+        client_id: newCustomer.customer_id,
+        first_name: newCustomer.first_name,
+        last_name: newCustomer.last_name,            
+        birthday: newCustomer.birthday,
+        gender: newCustomer.gender,
+        phone: newCustomer.phone,
+        address: newCustomer.address,
+        email: newUser.email
+      }
+      console.log("Api payload", apiPayload)
+    const crmItem = await api.post('/clients', apiPayload)
+
+    if (!crmItem.data.success) {
+        await transaction.rollback();
+        return res.status(400).json(
+          response.errorResponse(
+            'No se pudo sincronizar con el CRM',
+            crmItem.errors
+          )
+      )
+    }
 
       const welcomePromo = await createWelcomePromoCode(newCustomer.customer_id, transaction);
 

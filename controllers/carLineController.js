@@ -1,9 +1,10 @@
 'use strict';
-const { models } = require('../db');
+const { models, sequelize } = require('../db');
 const { car_lines: CarLine } = models;
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const { listCarLinesSchema, createCarLineSchema, updateCarLineSchema, carLineIdParamSchema } = require('../schemas/carLineSchema');
+const { default: api } = require('../utils/apiClient');
 
 const listCarLines = async (req, res) => {
   const response = new ApiResponse();
@@ -29,8 +30,28 @@ const createCarLine = async (req, res) => {
   const response = new ApiResponse();
   const { error, value } = createCarLineSchema.validate(req.body);
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
+  
+    const t = await sequelize.transaction();
   try {
     const item = await CarLine.create(value);
+    const crmItem = await api.post('/lines', {
+      line_id: item.line_id,
+      brand_id: item.brand_id,
+      category_id: item.category_id,
+      line_name: item.line_name
+    })
+
+    if (!crmItem.data.success) {
+        await t.rollback();
+
+        return res.status(400).json(
+          response.errorResponse(
+            'No se pudo sincronizar con el CRM',
+            crmResp.data
+          )
+      )
+    }
+    await t.commit();
     return res.status(201).json(response.successResponse(item, 'Car line creado'));
   } catch (err) {
     logger.error('Error al crear car_line', err);
