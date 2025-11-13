@@ -243,4 +243,73 @@ const quotationTemplate = ({
 module.exports = {
     welcomePromoTemplate,
     quotationTemplate,
+    // nueva plantilla para campañas que puede incluir imagen y body personalizado
+    campaignTemplate: ({
+        customerName,
+        subjectTitle,
+        bodyHtml,
+        promoCode,
+        discountLabel,
+        endDateLabel,
+        heroImageUrl,
+        ctaUrl,
+    }) => {
+        const logoUrl = getBrandAsset(config.mail?.brandLogoUrl, DEFAULT_LOGO_URL);
+        const brandHero = getBrandAsset(config.mail?.brandHeroUrl, DEFAULT_HERO_URL);
+        const heroUrl = typeof heroImageUrl === 'string' && heroImageUrl.trim().length ? heroImageUrl.trim() : getBrandAsset(config.mail?.welcomeHeroUrl, brandHero);
+        const primaryColor = getColor(config.mail?.primaryColor, '#f44336');
+        const secondaryColor = getColor(config.mail?.secondaryColor, '#111827');
+        const accentColor = primaryColor;
+
+        const heroSection = heroUrl
+            ? `<td style="padding:0;"><img src="${heroUrl}" alt="${subjectTitle || 'Campaña'}" width="600" style="width:100%;max-width:600px;height:auto;border-radius:20px 20px 0 0;display:block;" /></td>`
+            : '';
+
+        const promoBlock = promoCode
+            ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:24px 0;border-collapse:separate;border-spacing:0;"><tr><td style="background:${secondaryColor};border-radius:16px;padding:24px;border:1px solid rgba(255,255,255,0.06);"><p style="margin:0 0 8px;color:#9ca3af;font-size:14px;text-transform:uppercase;letter-spacing:2px;">Tu código especial</p><p style="margin:0 0 16px;font-size:32px;font-weight:700;color:${accentColor};letter-spacing:3px;">${promoCode}</p><p style="margin:0 0 8px;color:#e5e7eb;font-size:16px;">Beneficio: <strong>${discountLabel}</strong></p><p style="margin:0;color:#9ca3af;font-size:14px;">Vigencia: ${endDateLabel}</p></td></tr></table>`
+            : '';
+
+        const rawCta = typeof ctaUrl === 'string' && ctaUrl.trim().length ? ctaUrl.trim() : null;
+        const cta = rawCta ? buildButton({ label: 'Ver promoción', href: rawCta, background: accentColor, color: '#ffffff' }) : '';
+
+        return `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${subjectTitle || 'Campaña'}</title>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');</style>
+</head>
+<body style="margin:0;padding:0;background:#0b0f19;font-family:'Montserrat',Arial,sans-serif;color:#f9fafb;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#0b0f19;padding:32px 0;">
+        <tr>
+            <td align="center" style="padding:0 24px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background:#111827;border-radius:20px;overflow:hidden;box-shadow:0 20px 45px rgba(15,23,42,0.6);">
+                    <tr>
+                        <td style="padding:24px 24px 12px;" align="center">
+                            <img src="${logoUrl}" alt="Logo 413 RACE" width="200" style="width:200px;max-width:80%;height:auto;display:block;" />
+                        </td>
+                    </tr>
+                    ${heroSection}
+                    <tr>
+                        <td style="padding:32px 28px 24px;">
+                            <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#f3f4f6;">${subjectTitle || '¡Te traemos novedades!'}</h1>
+                            <div style="margin:0 0 16px;color:#e5e7eb;font-size:16px;line-height:1.6;">${bodyHtml || ''}</div>
+                            ${promoBlock}
+                            <div style="text-align:center;margin:24px 0;">${cta}</div>
+                            <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;text-align:center;">Si necesitas ayuda, nuestro equipo está listo para asistirte.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background:#0f172a;padding:20px 28px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+                            <p style="margin:0;color:#4b5563;font-size:12px;">© ${new Date().getFullYear()} 413 RACE · Pasión por los motores</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
+    }
 };

@@ -32,6 +32,17 @@ const createCustomerSchema = Joi.object({
   city_id: Joi.number().integer()
 });
 
+const createGuestCustomerSchema = Joi.object({
+  first_name: Joi.string().max(100).required(),
+  last_name: Joi.string().max(100).required(),
+  birthday: Joi.date().optional(),
+  gender: Joi.string().valid('Masculino', 'Femenino', 'Otro').optional(),
+  phone: Joi.string().min(8).required(),
+  address: Joi.string().min(1).required(),
+  city_id: Joi.number().integer().optional(),
+  email: Joi.string().required()
+});
+
 const updateCustomerSchema = Joi.object({
   first_name: Joi.string().max(100).optional(),
   last_name: Joi.string().max(100).optional(),
@@ -47,6 +58,7 @@ const customerIdParamSchema = Joi.number().integer().required();
 module.exports = {
     listCustomersSchema,
     createCustomerSchema,
+  createGuestCustomerSchema,
     updateCustomerSchema,
     customerIdParamSchema,
 };

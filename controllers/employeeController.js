@@ -1,11 +1,12 @@
 'use strict';
-const { models } = require('../db');
+const { models, sequelize } = require('../db');
 const { employees: Employee, users: User, roles: Role } = models;
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const ApiResponse = require('../utils/apiResponse');
 const { listEmployeeSchema,createEmployeeSchema, updateEmployeeSchema, employeeIdParamSchema, usernameParamSchema, changeOwnPasswordSchema } = require('../schemas/employeeSchema');
+const { default: api } = require('../utils/apiClient');
 
 function generateStrongPassword() {
   const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -110,7 +111,7 @@ const createEmployee = async (req, res) => {
   const response = new ApiResponse();
   const { error, value } = createEmployeeSchema.validate(req.body);
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
-
+  const transaction = await sequelize.transaction();
   try {
     const { username, email, role_id, first_name, last_name, hire_date, salary } = value;
 
@@ -133,7 +134,7 @@ const createEmployee = async (req, res) => {
       password: hashedPassword,
       status: true,
       mustChangePassword: 1
-    });
+    }, {transaction});
 
     const newEmployee = await Employee.create({
       user_id: newUser.user_id,
@@ -141,7 +142,31 @@ const createEmployee = async (req, res) => {
       last_name,
       hire_date,
       salary,
-    });
+    }, {transaction});
+     try {
+      const apiPayload = {
+        users_id: newUser.user_id,
+        name: newEmployee.first_name,
+        last_name: newEmployee.last_name,
+        username: newUser.username,
+        email: newUser.email,
+        role_id: newUser.role_id,
+        status: 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+      };
+
+      const crmResp = await api.post('/users', apiPayload);
+    if (crmResp && crmResp.data && crmResp.data.success === false) {
+        await transaction.rollback();                     
+        return res.status(400).json(response.errorResponse('No se pudo sincronizar con el CRM', crmResp.data));
+      }
+      await transaction.commit()
+    } catch (crmErr) {
+      try { if (!transaction.finished) await transaction.rollback(); } catch (rbErr) { logger.error('Rollback failed', rbErr); }
+      const status = crmErr.response?.status ?? 502;
+      const body = crmErr.response?.data ?? crmErr.message ?? String(crmErr);
+      logger.warn('CRM error creating guest customer', { err: crmErr.message || crmErr, body });
+      return res.status(status).json(response.errorResponse('No se pudo sincronizar con el CRM', body));
+    }
 
     return res.status(201).json(
       response.successResponse(

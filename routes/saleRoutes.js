@@ -5,7 +5,7 @@ const { authenticateJWT, optionalAuthenticateJWT } = require('../middlewares/aut
 const { checkRole } = require('../middlewares/roleMiddleware');
 
 router.get('/', authenticateJWT, checkRole(['Administrador','Empleado', 'Cliente']), saleController.listSales);
-router.post('/cars', authenticateJWT, checkRole(['Administrador','Empleado']), saleController.createCarSale);
+router.post('/cars',  saleController.createCarSale);
 router.post('/', optionalAuthenticateJWT, saleController.createdSale);
 router.delete('/:saleId', authenticateJWT, checkRole(['Administrador','Empleado','Cliente']), saleController.cancelSale);
 router.patch('/:saleId/status', authenticateJWT, checkRole(['Administrador','Empleado']), saleController.updateSaleStatus);
