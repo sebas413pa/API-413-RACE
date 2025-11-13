@@ -44,14 +44,14 @@ const { custom } = require('joi');
             isTemp: true
           },
           config.tokens.accessSecret,
-          { expiresIn: '2m' }
+          { expiresIn: '5m' }
         );
 
         res.cookie('tempToken', tempToken, {
-        httpOnly: true,
+        httpOnly: false,
         secure: config.env === 'production',
-        sameSite: 'None',
-        domain: '.413-race.store',
+        sameSite: config.env === 'production' ? 'None' : 'lax',
+        ...(config.env === 'production' && { domain: '.413-race.store' }),
         maxAge: 5 * 60 * 1000, 
         path: '/',
       });
@@ -75,18 +75,18 @@ const { custom } = require('joi');
         user_id: user.user_id
       });
       res.cookie('accessToken', accessToken, {
-      httpOnly: true,
+      httpOnly: false,
       secure: config.env === 'production',
-      sameSite: 'None',
-        domain: '.413-race.store',
+      sameSite: config.env === 'production' ? 'None' : 'lax',
+        ...(config.env === 'production' && { domain: '.413-race.store' }),
       maxAge: ms(config.tokens.accessExpiration,),
         path: '/'
     });
       res.cookie('refreshToken', refreshToken, {
-        httpOnly: true,
+        httpOnly: false,
         secure: config.env === 'production',
-        sameSite: 'None',
-        domain: '.413-race.store',
+        sameSite: config.env === 'production' ? 'None' : 'lax',
+        ...(config.env === 'production' && { domain: '.413-race.store' }),
         maxAge: ms(config.tokens.refreshExpiration),
           path: '/'
       });
@@ -120,19 +120,19 @@ const { custom } = require('joi');
     await tokenRecord.save(); 
 
     res.cookie('accessToken', newAccessToken, {
-      httpOnly: true,
+      httpOnly: false,
       secure: config.env === 'production',
-        sameSite: 'None',
-        domain: '.413-race.store',
+        sameSite: config.env === 'production' ? 'None' : 'lax',
+        ...(config.env === 'production' && { domain: '.413-race.store' }),
       maxAge: ms(config.tokens.accessExpiration),
       path: '/'
     });
 
     res.cookie('refreshToken', newRefreshToken, {
-      httpOnly: true,
+      httpOnly: false,
       secure: config.env === 'production',
-        sameSite: 'None',
-        domain: '.413-race.store',
+        sameSite: config.env === 'production' ? 'None' : 'lax',
+        ...(config.env === 'production' && { domain: '.413-race.store' }),
       maxAge: ms(config.tokens.refreshExpiration),
         path: '/'
     });
@@ -157,17 +157,17 @@ const { custom } = require('joi');
       await tokenRecord.destroy();
     }
     res.clearCookie('refreshToken', {
-  httpOnly: true,
+  httpOnly: false,
   secure: config.env === 'production',
-  sameSite: 'None',
-  domain: '.413-race.store',
+  sameSite: config.env === 'production' ? 'None' : 'lax',
+  ...(config.env === 'production' && { domain: '.413-race.store' }),
     path: '/'
 });
   res.clearCookie('accessToken', {
-  httpOnly: true,
+  httpOnly: false,
   secure: config.env === 'production',
-          sameSite: 'None',
-        domain: '.413-race.store',
+          sameSite: config.env === 'production' ? 'None' : 'lax',
+        ...(config.env === 'production' && { domain: '.413-race.store' }),
     path: '/'
 });
     logger.info("Logout exitoso");
