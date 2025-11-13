@@ -102,38 +102,72 @@ const createPromoCode = async (req, res) => {
     logger.warn('Datos inválidos al crear código promocional', error);
     return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
   }
+
   const t = await sequelize.transaction();
   try {
-    const customer = await Promise.all([
-      Customer.findByPk(value.customer_id, {t}),
-    ]);
+    const customerId = value.client_id ?? value.customer_id;
 
+    const customer = await Customer.findByPk(customerId, { transaction: t });
     if (!customer) {
-      if (!transaction.finished) await transaction.rollback();
+      await t.rollback();
       return res.status(404).json(response.errorResponse('Cliente asociado no encontrado'));
     }
 
-    const existingCode = await PromoCode.findOne({ where: { promo_code: value.promo_code }, t });
+    const existingCode = await PromoCode.findOne({ where: { promo_code: value.promo_code }, transaction: t });
     if (existingCode) {
+      await t.rollback();
       return res.status(409).json(response.errorResponse('El código promocional ya existe'));
     }
 
     const payload = {
       promo_code: value.promo_code,
-      customer_id: value.customer_id,
-      discount_type: value.discount_type ?? 'percentage',
-      discount_value: value.discount_value,
-      min_purchase_amount: typeof value.min_purchase_amount === 'undefined' ? 0 : value.min_purchase_amount,
-      max_discount_amount: typeof value.max_discount_amount === 'undefined' ? null : value.max_discount_amount,
+      customer_id: customerId,
+      discount_type: 'percentage',
+      discount_value: value.percentage,
+      min_purchase_amount: 0,
+      max_discount_amount: null,
       start_date: value.start_date,
       end_date: value.end_date,
-      status: typeof value.status === 'undefined' ? true : value.status,
+      status: true,
     };
 
-    const created = await PromoCode.create(payload, {t});
-    const result = await PromoCode.findByPk(created.promo_code_id, { include: promoCodeIncludes, t });
+    const created = await PromoCode.create(payload, { transaction: t });
 
-    logger.info('Código promocional creado exitosamente', { promo_code_id: created.promo_code_id });
+    let apiClient;
+    try {
+      apiClient = (await import('../utils/apiClient.js')).default;
+    } catch (impErr) {
+      await t.rollback();
+      logger.error('No se pudo importar apiClient para sincronizar promo code', impErr);
+      return res.status(500).json(response.errorResponse('Error de integración con servicio externo', impErr.message || impErr));
+    }
+
+    const remotePayload = {
+      code_id: created.promo_code_id,
+      percentage: Number(value.percentage),
+      promo_code: value.promo_code,
+      start_date: value.start_date,
+      end_date: value.end_date,
+      client_id: customerId,
+    };
+
+    try {
+      const remoteResp = await apiClient.post('/promo-codes', remotePayload);
+      if (!(remoteResp && remoteResp.status >= 200 && remoteResp.status < 300)) {
+        throw new Error('Respuesta no exitosa del servicio externo');
+      }
+    } catch (apiErr) {
+      await t.rollback();
+      logger.error('Error al sincronizar código promocional con servicio externo', apiErr);
+      const status = apiErr.response?.status || 502;
+      const data = apiErr.response?.data || apiErr.message;
+      return res.status(status === 502 ? 502 : 500).json(response.errorResponse('Error al sincronizar con servicio externo', data));
+    }
+
+    await t.commit();
+
+    const result = await PromoCode.findByPk(created.promo_code_id, { include: promoCodeIncludes });
+    logger.info('Código promocional creado y sincronizado exitosamente', { promo_code_id: created.promo_code_id });
     return res.status(201).json(response.successResponse(result, 'Código promocional creado exitosamente'));
   } catch (err) {
     if (!t.finished) await t.rollback();

@@ -16,6 +16,7 @@ const categoryProductRoutes = require('./categoryProductRoutes');
 const productRoutes = require('./productRoutes');
 const promotionRoutes = require('./promotionRoutes');
 const promoCodeRoutes = require('./promoCodeRoutes');
+const campaignRoutes = require('./campaignRoutes');
 const purchaseRoutes = require('./purchaseRoutes')
 const saleRoutes = require('./saleRoutes')
 const quotationRoutes = require('./quotationRoutes')
@@ -37,6 +38,7 @@ router.use('/category-products',  categoryProductRoutes);
 router.use('/products', productRoutes);
 router.use('/promotions', authenticateJWT, checkRole(['Administrador','Empleado']), promotionRoutes);
 router.use('/promo-codes', authenticateJWT, checkRole(['Administrador','Empleado']), promoCodeRoutes);
+router.use('/campaigns', campaignRoutes);
 router.use('/purchases', authenticateJWT, checkRole(['Administrador','Empleado']), purchaseRoutes)
 router.use('/sales', saleRoutes)
 router.use('/quotations', quotationRoutes)

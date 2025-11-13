@@ -14,6 +14,7 @@ const {
     quotationStatusSchema,
     QUOTATION_STATUS_VALUES
 } = require('../schemas/quotationSchema');
+const { default: api } = require('../utils/apiClient');
 
 const {
     quotations: Quotation,
@@ -57,7 +58,6 @@ const resolvePublicAssetUrl = (value) => {
         return null;
     }
 
-    // If it's already an absolute URL or a data URL, return as-is
     if (ABSOLUTE_URL_REGEX.test(trimmed) || DATA_URL_PREFIX.test(trimmed)) {
         return trimmed;
     }
@@ -186,7 +186,7 @@ const createQuotation = async(req, res) => {
         logger.warn('Datos inválidos al crear cotización', error);
         return res.status(400).json(response.errorResponse('Datos inválidos', error));
     }
-
+    const transaction = await sequelize.transaction();
     try {
         if (!req.user) {
             logger.warn('Intento de crear cotización sin usuario autenticado');
@@ -200,14 +200,15 @@ const createQuotation = async(req, res) => {
         }
 
         const customer = await Customer.findByPk(customerId, {
-            include: [{ model: User, as: 'user', attributes: ['email', 'username'] }]
+            include: [{ model: User, as: 'user', attributes: ['email', 'username'] }],
+            transaction
         });
         if (!customer) {
             logger.warn('Cliente no encontrado al crear cotización', { customerId });
             return res.status(404).json(response.errorResponse('Cliente no encontrado'));
         }
 
-        const car = await Car.findByPk(value.car_id);
+        const car = await Car.findByPk(value.car_id, {transaction});
         if (!car) {
             logger.warn('Vehículo no encontrado al crear cotización', { car_id: value.car_id });
             return res.status(404).json(response.errorResponse('Vehículo no encontrado'));
@@ -230,12 +231,37 @@ const createQuotation = async(req, res) => {
             createPayload.is_active = value.is_active;
         }
 
-        const quotation = await Quotation.create(createPayload);
+        const quotation = await Quotation.create(createPayload, {transaction});
 
         const created = await Quotation.findOne({
             where: { quotation_id: quotation.quotation_id },
-            include: buildQuotationIncludes()
+            include: buildQuotationIncludes(),
+            transaction
         });
+
+        try {
+            const apiPayload = {
+                source: "Cotizacion",
+                start_date: new Date(),
+                client_id:customerId,
+                car_id:car.car_id,
+                status_id: 5,
+                quote_id: quotation.quotation_id,
+            };
+
+                const crmResp = await api.post('/leads', apiPayload);
+                if (crmResp && crmResp.data && crmResp.data.success === false) {
+                    await transaction.rollback();                     
+                    return res.status(400).json(response.errorResponse('No se pudo sincronizar con el CRM', crmResp.data));
+                }
+                await transaction.commit()
+            } catch (crmErr) {
+                try { if (!transaction.finished) await transaction.rollback(); } catch (rbErr) { logger.error('Rollback failed', rbErr); }
+                const status = crmErr.response?.status ?? 502;
+                const body = crmErr.response?.data ?? crmErr.message ?? String(crmErr);
+                logger.warn('CRM error creating lead', { err: crmErr.message || crmErr, body });
+                return res.status(status).json(response.errorResponse('No se pudo sincronizar con el CRM', body));
+            }
 
         const quotationData = created.get({ plain: true });
         const recipientEmail = customer.user?.email;
@@ -249,7 +275,6 @@ const createQuotation = async(req, res) => {
                 ? Number(quotationData.total)
                 : null;
 
-            // pick a car image (main preferred) and resolve to a public URL
             const carImages = Array.isArray(quotationData.car?.car_images)
                 ? quotationData.car.car_images
                 : [];
@@ -298,10 +323,10 @@ const createQuotation = async(req, res) => {
         } else {
             logger.warn('Cliente no tiene correo electrónico asociado, se omite envío de cotización', { customerId });
         }
-
-        logger.info('Cotización creada exitosamente', { quotation_id: quotation.quotation_id });
+    logger.info('Cotización creada exitosamente', { quotation_id: quotation.quotation_id });
         return res.status(201).json(response.successResponse(created, 'Cotización creada exitosamente'));
     } catch (err) {
+         try { if (!transaction.finished) await transaction.rollback(); } catch (rbErr) { logger.error('Rollback failed', rbErr); }
         logger.error('Error al crear cotización', err);
         return res.status(500).json(response.errorResponse('Error al crear cotización', err));
     }

@@ -12,6 +12,7 @@ const ApiResponse = require('../utils/apiResponse');
 const {listCustomersSchema,
     createCustomerSchema,
     updateCustomerSchema,
+    createGuestCustomerSchema,
     customerIdParamSchema} = require('../schemas/customerSchema');
 const { resetPasswordSchema } = require("../schemas/recoverSchema");
 const {createWelcomePromoCode} = require('../services/customerService');
@@ -199,6 +200,62 @@ const createCustomer = async (req, res) => {
   }
 };
 
+const createGuestCustomer = async (req, res) => {
+  const response = new ApiResponse();
+  const { error, value } = createGuestCustomerSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
+
+  const transaction = await sequelize.transaction();
+  try {
+    const { first_name, last_name, birthday, gender, phone, address, city_id, email } = value;
+
+    const newCustomer = await Customer.create({
+      first_name,
+      last_name,
+      birthday: birthday || null,
+      gender: gender || null,
+      phone,
+      address,
+      city_id: city_id || null,
+      status: true,
+    }, { transaction });
+
+    try {
+      const apiPayload = {
+        client_id: newCustomer.customer_id,
+        first_name: newCustomer.first_name,
+        last_name: newCustomer.last_name,
+        birthday: newCustomer.birthday,
+        gender: newCustomer.gender,
+        phone: newCustomer.phone,
+        address: newCustomer.address,
+        email: value.email,
+      };
+
+      const crmResp = await api.post('/clients', apiPayload);
+      if (crmResp && crmResp.data && crmResp.data.success === false) {
+        await transaction.rollback();
+        return res.status(400).json(response.errorResponse('No se pudo sincronizar con el CRM', crmResp.data));
+      }
+    } catch (crmErr) {
+      try { if (!transaction.finished) await transaction.rollback(); } catch (rbErr) { logger.error('Rollback failed', rbErr); }
+      const status = crmErr.response?.status ?? 502;
+      const body = crmErr.response?.data ?? crmErr.message ?? String(crmErr);
+      logger.warn('CRM error creating guest customer', { err: crmErr.message || crmErr, body });
+      return res.status(status).json(response.errorResponse('No se pudo sincronizar con el CRM', body));
+    }
+
+    await transaction.commit();
+
+    const customerData = newCustomer.toJSON ? newCustomer.toJSON() : newCustomer;
+    return res.status(201).json(response.successResponse(customerData, 'Cliente (invitado) creado exitosamente'));
+  } catch (err) {
+    try { if (transaction && !transaction.finished) await transaction.rollback(); } catch (rbErr) { logger.error('Rollback failed', rbErr); }
+    logger.error('Error al crear cliente invitado', err);
+    return res.status(500).json(response.errorResponse('Error al crear cliente invitado', err));
+  }
+};
+
 const updateCustomer = async (req, res) => {
   const response = new ApiResponse();
   const { customer_id } = req.params;
@@ -291,7 +348,6 @@ const forgotPassword = async(req,res)=>{
 
     await ResetToken.create({ user_id: user.user_id, token, expires_at: expiresAt });
 
-    // Configurar transporte de correo
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -365,4 +421,4 @@ const resetPassword = async (req, res) => {
 };
 
 
-module.exports = { listCustomers, createCustomer, updateCustomer, deactivateCustomer, activateCustomer, listCities, forgotPassword, resetPassword};
+module.exports = { createGuestCustomer, listCustomers, createCustomer, updateCustomer, deactivateCustomer, activateCustomer, listCities, forgotPassword, resetPassword};
