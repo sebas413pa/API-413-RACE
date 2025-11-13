@@ -50,7 +50,8 @@ const { custom } = require('joi');
         res.cookie('tempToken', tempToken, {
         httpOnly: true,
         secure: config.env === 'production',
-        sameSite: config.env === 'production' ? 'Strict' : 'Lax',
+        sameSite: 'None',
+        domain: '.413-race.store',
         maxAge: 5 * 60 * 1000, 
         path: '/',
       });
@@ -76,14 +77,16 @@ const { custom } = require('joi');
       res.cookie('accessToken', accessToken, {
       httpOnly: true,
       secure: config.env === 'production',
-      sameSite: config.env === 'production' ? 'Strict' : 'Lax',
+      sameSite: 'None',
+        domain: '.413-race.store',
       maxAge: ms(config.tokens.accessExpiration,),
         path: '/'
     });
       res.cookie('refreshToken', refreshToken, {
         httpOnly: true,
         secure: config.env === 'production',
-        sameSite: config.env === 'production' ? 'Strict' : 'Lax',
+        sameSite: 'None',
+        domain: '.413-race.store',
         maxAge: ms(config.tokens.refreshExpiration),
           path: '/'
       });
@@ -119,7 +122,8 @@ const { custom } = require('joi');
     res.cookie('accessToken', newAccessToken, {
       httpOnly: true,
       secure: config.env === 'production',
-      sameSite: config.env === 'production' ? 'Strict' : 'Lax',
+        sameSite: 'None',
+        domain: '.413-race.store',
       maxAge: ms(config.tokens.accessExpiration),
       path: '/'
     });
@@ -127,7 +131,8 @@ const { custom } = require('joi');
     res.cookie('refreshToken', newRefreshToken, {
       httpOnly: true,
       secure: config.env === 'production',
-      sameSite: config.env === 'production' ? 'Strict' : 'Lax',
+        sameSite: 'None',
+        domain: '.413-race.store',
       maxAge: ms(config.tokens.refreshExpiration),
         path: '/'
     });
@@ -154,13 +159,15 @@ const { custom } = require('joi');
     res.clearCookie('refreshToken', {
   httpOnly: true,
   secure: config.env === 'production',
-  sameSite: 'Strict',
+  sameSite: 'None',
+  domain: '.413-race.store',
     path: '/'
 });
   res.clearCookie('accessToken', {
   httpOnly: true,
   secure: config.env === 'production',
-  sameSite: 'Strict',
+          sameSite: 'None',
+        domain: '.413-race.store',
     path: '/'
 });
     logger.info("Logout exitoso");

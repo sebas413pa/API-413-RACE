@@ -1,12 +1,12 @@
 require('dotenv').config();
 
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const NODE_ENV = process.env.NODE_ENV || 'production';
 
 const config = {
   env: NODE_ENV,
-  protocol: process.env.PROTOCOL || 'http',
-  host: process.env.HOST || 'localhost',
-  port: process.env.PORT || 3000,
+  protocol: process.env.PROTOCOL || 'https',
+  host: process.env.HOST || 'api.413-race.store',
+  port: process.env.PORT || 443,
   apiPrefix: process.env.API_PREFIX || '/api',
 
   app: {
@@ -15,7 +15,7 @@ const config = {
   },
 
   cors: {
-    origin: process.env.CORS_ORIGIN || '*'
+    origin: process.env.CORS_ORIGIN || 'https://413-race.store'
   },
 
   log: {
