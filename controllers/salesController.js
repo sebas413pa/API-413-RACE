@@ -1002,5 +1002,54 @@ const updateSaleStatus = async(req, res) => {
     }
 };
 
+/**
+ * Report sales from today back to one month ago.
+ * Returns: list of sales in the period and total amount for car sales.
+ */
+const reportMonthlySales = async (req, res) => {
+    const response = new ApiResponse();
+    try {
+        const now = new Date();
+        const endDate = new Date(now);
+        endDate.setHours(23,59,59,999);
 
-module.exports = {listSales, createdSale, createCarSale, cancelSale, updateSaleStatus}
+        const startDate = new Date(now);
+        startDate.setMonth(startDate.getMonth() - 1);
+        startDate.setHours(0,0,0,0);
+
+        const sales = await Sale.findAll({
+            where: {
+                sale_date: {
+                    [Op.between]: [startDate, endDate]
+                }
+            },
+            include: buildSaleIncludes(),
+            order: [['sale_date', 'DESC']]
+        });
+
+        const carSales = sales.filter(s => s.sale_type === 'Vehiculo');
+        const totalCarSales = carSales.reduce((acc, s) => {
+            const v = Number(s.total || 0);
+            return acc + (Number.isFinite(v) ? v : 0);
+        }, 0);
+
+        const result = {
+            period: {
+                from: startDate.toISOString(),
+                to: endDate.toISOString()
+            },
+            totalCarSales: Number(totalCarSales.toFixed(2)),
+            countCarSales: carSales.length,
+            sales
+        };
+
+        logger.info('Reporte mensual de ventas generado', { from: startDate, to: endDate, sales_count: sales.length });
+        return res.status(200).json(response.successResponse(result, 'Reporte mensual de ventas generado correctamente'));
+    } catch (err) {
+        logger.error('Error al generar reporte mensual de ventas', err);
+        return res.status(500).json(response.errorResponse('Error al generar reporte mensual de ventas', err));
+    }
+};
+
+
+module.exports = {listSales, createdSale, createCarSale, cancelSale, updateSaleStatus, reportMonthlySales}
