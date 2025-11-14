@@ -35,7 +35,11 @@ const createCarCategory = async (req, res) => {
     const item = await CarCategory.create(value);
     const crmItem = await api.post('/categories', {
       category_id: item.car_category_id,
-      category_name: item.category_name
+      category_name: item.category_name,
+        cookies: {
+    accessToken,
+    refreshToken
+  }
     })
 
     if (!crmItem.data.success) {

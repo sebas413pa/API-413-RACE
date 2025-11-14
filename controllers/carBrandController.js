@@ -116,7 +116,11 @@ const createCarBrand = async (req, res) => {
   const crmItem = await api.post('/brands', {
     brand_id: item.brand_id,
     brand_name: item.brand_name,
-    image_url: item.image_url
+    image_url: item.image_url,
+      cookies: {
+    accessToken,
+    refreshToken
+  }
   })
 
   if (!crmItem.data.success) {

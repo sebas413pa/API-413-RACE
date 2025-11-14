@@ -121,7 +121,12 @@ const createCustomer = async (req, res) => {
         email: newUser.email
       }
       console.log("Api payload", apiPayload)
-    const crmItem = await api.post('/clients', apiPayload)
+    const crmItem = await api.post('/clients', apiPayload,{
+      cookies: {
+    accessToken,
+    refreshToken
+  }
+    })
 
     if (!crmItem.data.success) {
         await transaction.rollback();
@@ -201,6 +206,8 @@ const createCustomer = async (req, res) => {
 };
 
 const createGuestCustomer = async (req, res) => {
+  const accessToken = req.cookies?.accessToken;
+  const refreshToken = req.cookies?.refreshToken;
   const response = new ApiResponse();
   const { error, value } = createGuestCustomerSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
@@ -232,7 +239,12 @@ const createGuestCustomer = async (req, res) => {
         email: value.email,
       };
 
-      const crmResp = await api.post('/clients', apiPayload);
+      const crmResp = await api.post('/clients', apiPayload, {
+        cookies: {
+          accessToken,
+          refreshToken
+        }
+      });
       if (crmResp && crmResp.data && crmResp.data.success === false) {
         await transaction.rollback();
         return res.status(400).json(response.errorResponse('No se pudo sincronizar con el CRM', crmResp.data));

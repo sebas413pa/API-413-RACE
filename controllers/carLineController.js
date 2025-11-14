@@ -38,7 +38,11 @@ const createCarLine = async (req, res) => {
       line_id: item.line_id,
       brand_id: item.brand_id,
       category_id: item.category_id,
-      line_name: item.line_name
+      line_name: item.line_name,
+        cookies: {
+    accessToken,
+    refreshToken
+  }
     })
 
     if (!crmItem.data.success) {

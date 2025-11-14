@@ -249,7 +249,10 @@ const createQuotation = async(req, res) => {
                 quote_id: quotation.quotation_id,
             };
 
-                const crmResp = await api.post('/leads', apiPayload);
+                const crmResp = await api.post('/leads', apiPayload,{cookies: {
+    accessToken,
+    refreshToken
+  }});
                 if (crmResp && crmResp.data && crmResp.data.success === false) {
                     await transaction.rollback();                     
                     return res.status(400).json(response.errorResponse('No se pudo sincronizar con el CRM', crmResp.data));

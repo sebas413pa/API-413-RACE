@@ -154,7 +154,10 @@ const createEmployee = async (req, res) => {
         status: 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
       };
 
-      const crmResp = await api.post('/users', apiPayload);
+      const crmResp = await api.post('/users', apiPayload, {cookies: {
+    accessToken,
+    refreshToken
+  }});
     if (crmResp && crmResp.data && crmResp.data.success === false) {
         await transaction.rollback();                     
         return res.status(400).json(response.errorResponse('No se pudo sincronizar con el CRM', crmResp.data));

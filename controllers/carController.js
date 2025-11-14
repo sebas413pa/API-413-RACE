@@ -138,7 +138,11 @@ const createCar = async (req, res) => {
       stock: car.stock,
       profit_margin: car.profit_margin,
       image_url: `/uploads/cars/${files[0].filename}`,
-      sale_price: sale_price
+      sale_price: sale_price,
+        cookies: {
+    accessToken,
+    refreshToken
+  }
     })
 
     if (!crmItem.data.success) {
