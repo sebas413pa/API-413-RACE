@@ -55,6 +55,9 @@ const listCars = async (req, res) => {
 };
 
 const createCar = async (req, res) => {
+  const accessToken = req.cookies?.accessToken;
+const refreshToken = req.cookies?.refreshToken;
+
   const response = new ApiResponse();
   const payload = {
     line_id: normalizeNumber(req.body.line_id),
@@ -139,7 +142,8 @@ const createCar = async (req, res) => {
       profit_margin: car.profit_margin,
       image_url: `/uploads/cars/${files[0].filename}`,
       sale_price: sale_price,
-        cookies: {
+    },{
+              cookies: {
     accessToken,
     refreshToken
   }

@@ -2,6 +2,7 @@
 const { models } = require('../db');
 const { car_categories: CarCategory } = models;
 const logger = require('../utils/logger');
+const { sequelize } = require('../db');
 const ApiResponse = require('../utils/apiResponse');
 const { listCarCategoriesSchema, createCarCategorySchema, updateCarCategorySchema, carCategoryIdParamSchema } = require('../schemas/carCategorySchema');
 const { Op } = require('sequelize');
@@ -26,6 +27,9 @@ const listCarCategories = async (req, res) => {
 };
 
 const createCarCategory = async (req, res) => {
+  const accessToken = req.cookies?.accessToken;
+const refreshToken = req.cookies?.refreshToken;
+
   const response = new ApiResponse();
   const { error, value } = createCarCategorySchema.validate(req.body);
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
@@ -36,7 +40,8 @@ const createCarCategory = async (req, res) => {
     const crmItem = await api.post('/categories', {
       category_id: item.car_category_id,
       category_name: item.category_name,
-        cookies: {
+    },{
+              cookies: {
     accessToken,
     refreshToken
   }

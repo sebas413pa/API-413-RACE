@@ -179,6 +179,8 @@ const listQuotations = async(req, res) => {
 };
 
 const createQuotation = async(req, res) => {
+    const accessToken = req.cookies?.accessToken;
+const refreshToken = req.cookies?.refreshToken;
     const response = new ApiResponse();
     const { error, value } = createQuotationSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
 

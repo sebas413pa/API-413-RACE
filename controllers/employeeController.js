@@ -108,6 +108,9 @@ const listEmployees = async (req, res) => {
 };
 
 const createEmployee = async (req, res) => {
+  const accessToken = req.cookies?.accessToken;
+const refreshToken = req.cookies?.refreshToken;
+
   const response = new ApiResponse();
   const { error, value } = createEmployeeSchema.validate(req.body);
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));

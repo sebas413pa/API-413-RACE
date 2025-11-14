@@ -81,6 +81,9 @@ const listCarBrands = async (req, res) => {
 };
 
 const createCarBrand = async (req, res) => {
+  const accessToken = req.cookies?.accessToken;
+const refreshToken = req.cookies?.refreshToken;
+
   const response = new ApiResponse();
   const file = req.file || null;
   const cleanupUpload = () => {
@@ -117,10 +120,11 @@ const createCarBrand = async (req, res) => {
     brand_id: item.brand_id,
     brand_name: item.brand_name,
     image_url: item.image_url,
-      cookies: {
-    accessToken,
-    refreshToken
-  }
+  },{
+    cookies: {
+      accessToken,
+      refreshToken
+    }
   })
 
   if (!crmItem.data.success) {

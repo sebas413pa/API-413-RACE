@@ -27,6 +27,8 @@ const listCarLines = async (req, res) => {
 };
 
 const createCarLine = async (req, res) => {
+  const accessToken = req.cookies?.accessToken;
+  const refreshToken = req.cookies?.refreshToken;
   const response = new ApiResponse();
   const { error, value } = createCarLineSchema.validate(req.body);
   if (error) return res.status(400).json(response.errorResponse('Datos inválidos', error.details));
@@ -39,7 +41,8 @@ const createCarLine = async (req, res) => {
       brand_id: item.brand_id,
       category_id: item.category_id,
       line_name: item.line_name,
-        cookies: {
+    },{
+      cookies: {
     accessToken,
     refreshToken
   }
