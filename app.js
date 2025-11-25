@@ -9,11 +9,23 @@ const cors =require('cors');
 const app = express();
 
 
-app.use(cors({
-  origin: 'http://localhost:3002',
-  methods: ['GET', 'POST', 'PUT','PATCH', 'DELETE'],
-  credentials: true,
-}));
+const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(o => o.trim());
+
+app.use(
+  cors({
+    origin: function(origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true); 
+      } else {
+        return callback(new Error("CORS no permitido para este origen: " + origin), false);
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  })
+);
 
 app.use(express.json());
 

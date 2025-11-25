@@ -31,6 +31,7 @@ const replacePlaceholders = (text, client, promoCode = '') => {
 };
 
 const processCampaign = async (req, res) => {
+    
     const response = new ApiResponse();
 
     const body = req.body && typeof req.body === 'object' ? req.body : null;
@@ -105,8 +106,11 @@ const processCampaign = async (req, res) => {
                             end_date: endDate,
                             client_id: localCustomer ? localCustomer.customer_id : (client.client_id || null),
                         };
+                        const accessToken = req.cookies?.accessToken;
+                        const refreshToken = req.cookies?.refreshToken;
+
                         console.log(remotePayload)
-                        const remoteResp = await apiClient.post('/promo-codes', remotePayload);
+                        const remoteResp = await apiClient.post('/promo-codes', remotePayload,{accessToken, refreshToken});
                         if (!(remoteResp && remoteResp.status >= 200 && remoteResp.status < 300) || (remoteResp.data && remoteResp.data.success === false)) {
                             const err = new Error('Respuesta no exitosa del servicio externo al crear promo code');
                             err.response = remoteResp;
